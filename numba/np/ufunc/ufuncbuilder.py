@@ -3,12 +3,11 @@
 import inspect
 from contextlib import contextmanager
 
-from numba.core import config
 from numba.core.decorators import jit
 from numba.core.descriptors import TargetDescriptor
-from numba.core.options import TargetOptions, include_default_options
-from numba.core.registry import cpu_target
-from numba.core.target_extension import dispatcher_registry, target_registry
+from numba.core.options import TargetOptions
+from numba.core.registry import dispatcher_registry, cpu_target
+from numba.core.cpu import FastMathOptions
 from numba.core import utils, types, serialize, compiler, sigutils
 from numba.np.numpy_support import as_dtype
 from numba.np.ufunc import _internal
@@ -18,42 +17,17 @@ from numba.core.caching import FunctionCache, NullCache
 from numba.core.compiler_lock import global_compiler_lock
 
 
-_options_mixin = include_default_options(
-    "nopython",
-    "forceobj",
-    "boundscheck",
-    "fastmath",
-    "target_backend",
-)
-
-
-class UFuncTargetOptions(_options_mixin, TargetOptions):
-
-    def finalize(self, flags, options):
-        if not flags.is_set("enable_pyobject"):
-            flags.enable_pyobject = True
-
-        if not flags.is_set("enable_looplift"):
-            flags.enable_looplift = True
-
-        flags.inherit_if_not_set("nrt", default=True)
-
-        if not flags.is_set("debuginfo"):
-            flags.debuginfo = config.DEBUGINFO_DEFAULT
-
-        if not flags.is_set("boundscheck"):
-            flags.boundscheck = flags.debuginfo
-
-        flags.enable_pyobject_looplift = True
-
-        flags.inherit_if_not_set("fastmath")
+class UFuncTargetOptions(TargetOptions):
+    OPTIONS = {
+        "nopython" : bool,
+        "forceobj" : bool,
+        "boundscheck": bool,
+        "fastmath" : FastMathOptions,
+    }
 
 
 class UFuncTarget(TargetDescriptor):
     options = UFuncTargetOptions
-
-    def __init__(self):
-        super().__init__('ufunc')
 
     @property
     def typing_context(self):
@@ -110,12 +84,11 @@ class UFuncDispatcher(serialize.ReduceMixin):
         flags = compiler.Flags()
         self.targetdescr.options.parse_as_flags(flags, topt)
 
-        flags.no_cpython_wrapper = True
-        flags.error_model = "numpy"
+        flags.set("no_cpython_wrapper")
+        flags.set("error_model", "numpy")
         # Disable loop lifting
-        # The feature requires a real
-        #  python function
-        flags.enable_looplift = False
+        # The feature requires a real python function
+        flags.unset("enable_looplift")
 
         return self._compile_core(sig, flags, locals)
 
@@ -141,27 +114,26 @@ class UFuncDispatcher(serialize.ReduceMixin):
 
         # Use cache and compiler in a critical section
         with global_compiler_lock:
-            with utils.ConfigStack().enter(flags.copy()):
-                with store_overloads_on_success():
-                    # attempt look up of existing
-                    cres = self.cache.load_overload(sig, targetctx)
-                    if cres is not None:
-                        return cres
-
-                    # Compile
-                    args, return_type = sigutils.normalize_signature(sig)
-                    cres = compiler.compile_extra(typingctx, targetctx,
-                                                  self.py_func, args=args,
-                                                  return_type=return_type,
-                                                  flags=flags, locals=locals)
-
-                    # cache lookup failed before so safe to save
-                    self.cache.save_overload(sig, cres)
-
+            with store_overloads_on_success():
+                # attempt look up of existing
+                cres = self.cache.load_overload(sig, targetctx)
+                if cres is not None:
                     return cres
 
+                # Compile
+                args, return_type = sigutils.normalize_signature(sig)
+                cres = compiler.compile_extra(typingctx, targetctx,
+                                              self.py_func, args=args,
+                                              return_type=return_type,
+                                              flags=flags, locals=locals)
 
-dispatcher_registry[target_registry['npyufunc']] = UFuncDispatcher
+                # cache lookup failed before so safe to save
+                self.cache.save_overload(sig, cres)
+
+                return cres
+
+
+dispatcher_registry['npyufunc'] = UFuncDispatcher
 
 
 # Utility functions
@@ -256,7 +228,7 @@ class UFuncBuilder(_BaseUFuncBuilder):
     def __init__(self, py_func, identity=None, cache=False, targetoptions={}):
         self.py_func = py_func
         self.identity = parse_identity(identity)
-        self.nb_func = jit(_target='npyufunc',
+        self.nb_func = jit(target='npyufunc',
                            cache=cache,
                            **targetoptions)(py_func)
         self._sigs = []
@@ -282,7 +254,7 @@ class UFuncBuilder(_BaseUFuncBuilder):
                 cres = self._cres[sig]
                 dtypenums, ptr, env = self.build(cres, sig)
                 dtypelist.append(dtypenums)
-                ptrlist.append(int(ptr))
+                ptrlist.append(utils.longint(ptr))
                 keepalive.append((cres.library, env))
 
             datlist = [None] * len(ptrlist)
@@ -321,7 +293,7 @@ class GUFuncBuilder(_BaseUFuncBuilder):
                  targetoptions={}):
         self.py_func = py_func
         self.identity = parse_identity(identity)
-        self.nb_func = jit(_target='npyufunc', cache=cache)(py_func)
+        self.nb_func = jit(target='npyufunc', cache=cache)(py_func)
         self.signature = signature
         self.sin, self.sout = parse_signature(signature)
         self.targetoptions = targetoptions
@@ -340,8 +312,8 @@ class GUFuncBuilder(_BaseUFuncBuilder):
 
     @global_compiler_lock
     def build_ufunc(self):
-        type_list = []
-        func_list = []
+        dtypelist = []
+        ptrlist = []
         if not self.nb_func:
             raise TypeError("No definition")
 
@@ -350,19 +322,19 @@ class GUFuncBuilder(_BaseUFuncBuilder):
         for sig in self._sigs:
             cres = self._cres[sig]
             dtypenums, ptr, env = self.build(cres)
-            type_list.append(dtypenums)
-            func_list.append(int(ptr))
+            dtypelist.append(dtypenums)
+            ptrlist.append(utils.longint(ptr))
             keepalive.append((cres.library, env))
 
-        datalist = [None] * len(func_list)
+        datlist = [None] * len(ptrlist)
 
-        nin = len(self.sin)
-        nout = len(self.sout)
+        inct = len(self.sin)
+        outct = len(self.sout)
 
         # Pass envs to fromfuncsig to bind to the lifetime of the ufunc object
         ufunc = _internal.fromfunc(
             self.py_func.__name__, self.py_func.__doc__,
-            func_list, type_list, nin, nout, datalist,
+            ptrlist, dtypelist, inct, outct, datlist,
             keepalive, self.identity, self.signature,
         )
         return ufunc

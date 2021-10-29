@@ -27,7 +27,7 @@ def check_concurrent_compiling():
         foo[1, 1](x)
         return x
 
-    arrays = [cuda.to_device(np.arange(10)) for i in range(10)]
+    arrays = [np.arange(10) for i in range(10)]
     expected = np.arange(10)
     expected[0] += 1
     with ThreadPoolExecutor(max_workers=4) as e:
@@ -38,8 +38,7 @@ def check_concurrent_compiling():
 def spawn_process_entry(q):
     try:
         check_concurrent_compiling()
-    # Catch anything that goes wrong in the threads
-    except:  # noqa: E722
+    except:
         msg = traceback.format_exc()
         q.put('\n'.join(['', '=' * 80, msg]))
     else:

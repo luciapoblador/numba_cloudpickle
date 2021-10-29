@@ -3,7 +3,6 @@ from collections import namedtuple
 import numpy as np
 
 from llvmlite.llvmpy.core import Type, Builder, ICMP_EQ, Constant
-from llvmlite import ir
 
 from numba.core import types, cgutils
 from numba.core.compiler_lock import global_compiler_lock
@@ -162,10 +161,10 @@ def build_ufunc_wrapper(library, context, fname, signature, objmode, cres):
         func_type = context.call_conv.get_function_type(
             signature.return_type, signature.args)
 
-    func = ir.Function(wrapper_module, func_type, name=fname)
+    func = wrapper_module.add_function(func_type, name=fname)
     func.attributes.add("alwaysinline")
 
-    wrapper = ir.Function(wrapper_module, fnty, "__ufunc__." + func.name)
+    wrapper = wrapper_module.add_function(fnty, "__ufunc__." + func.name)
     arg_args, arg_dims, arg_steps, arg_data = wrapper.args
     arg_args.name = "args"
     arg_dims.name = "dims"
@@ -355,10 +354,10 @@ class _GufuncWrapper(object):
         func_type = self.call_conv.get_function_type(self.fndesc.restype,
                                                      self.fndesc.argtypes)
         fname = self.fndesc.llvm_func_name
-        func = ir.Function(wrapper_module, func_type, name=fname)
+        func = wrapper_module.add_function(func_type, name=fname)
 
         func.attributes.add("alwaysinline")
-        wrapper = ir.Function(wrapper_module, fnty, name)
+        wrapper = wrapper_module.add_function(fnty, name)
         # The use of weak_odr linkage avoids the function being dropped due
         # to the order in which the wrappers and the user function are linked.
         wrapper.linkage = 'weak_odr'
@@ -526,8 +525,7 @@ def _prepare_call_to_object_mode(context, builder, pyapi, func,
                                     ll_intp_ptr, ll_voidptr,
                                     ll_int, ll_int])
 
-    fn_array_new = cgutils.get_or_insert_function(mod, fnty,
-                                                  "numba_ndarray_new")
+    fn_array_new = mod.get_or_insert_function(fnty, name="numba_ndarray_new")
 
     # Convert each llarray into pyobject
     error_pointer = cgutils.alloca_once(builder, Type.int(1), name='error')

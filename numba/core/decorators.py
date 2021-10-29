@@ -12,6 +12,7 @@ from numba.core.errors import DeprecationError, NumbaDeprecationWarning
 from numba.stencils.stencil import stencil
 from numba.core import config, extending, sigutils, registry
 
+
 _logger = logging.getLogger(__name__)
 
 
@@ -22,9 +23,8 @@ _msg_deprecated_signature_arg = ("Deprecated keyword argument `{0}`. "
                                  "Signatures should be passed as the first "
                                  "positional argument.")
 
-
-def jit(signature_or_function=None, locals={}, cache=False,
-        pipeline_class=None, boundscheck=None, **options):
+def jit(signature_or_function=None, locals={}, target='cpu', cache=False,
+        pipeline_class=None, boundscheck=False, **options):
     """
     This decorator is used to compile a Python function into native code.
 
@@ -41,7 +41,7 @@ def jit(signature_or_function=None, locals={}, cache=False,
         Mapping of local variable names to Numba types. Used to override the
         types deduced by Numba's type inference engine.
 
-    target (deprecated): str
+    target: str
         Specifies the target platform to compile for. Valid targets are cpu,
         gpu, npyufunc, and cuda. Defaults to cpu.
 
@@ -84,18 +84,15 @@ def jit(signature_or_function=None, locals={}, cache=False,
                 NOTE: This inlining is performed at the Numba IR level and is in
                 no way related to LLVM inlining.
 
-            boundscheck: bool or None
+            boundscheck: bool
                 Set to True to enable bounds checking for array indices. Out
                 of bounds accesses will raise IndexError. The default is to
-                not do bounds checking. If False, bounds checking is disabled,
-                out of bounds accesses can produce garbage results or segfaults.
+                not do bounds checking. If bounds checking is disabled, out of
+                bounds accesses can produce garbage results or segfaults.
                 However, enabling bounds checking will slow down typical
                 functions, so it is recommended to only use this flag for
                 debugging. You can also set the NUMBA_BOUNDSCHECK environment
-                variable to 0 or 1 to globally override this flag. The default
-                value is None, which under normal execution equates to False,
-                but if debug is set to True then bounds checking will be
-                enabled.
+                variable to 0 or 1 to globally override this flag.
 
     Returns
     --------
@@ -148,14 +145,6 @@ def jit(signature_or_function=None, locals={}, cache=False,
         raise DeprecationError(_msg_deprecated_signature_arg.format('restype'))
     if options.get('nopython', False) and options.get('forceobj', False):
         raise ValueError("Only one of 'nopython' or 'forceobj' can be True.")
-    if 'target' in options:
-        target = options.pop('target')
-        warnings.warn("The 'target' keyword argument is deprecated.", NumbaDeprecationWarning)
-    else:
-        if "_target" in options:
-            # Set the "target_backend" option if "_target" is defined.
-            options['target_backend'] = options['_target']
-        target = options.pop('_target', 'cpu')
 
     options['boundscheck'] = boundscheck
 
@@ -189,9 +178,7 @@ def jit(signature_or_function=None, locals={}, cache=False,
 
 
 def _jit(sigs, locals, target, cache, targetoptions, **dispatcher_args):
-
-    from numba.core.target_extension import resolve_dispatcher_from_str
-    dispatcher = resolve_dispatcher_from_str(target)
+    dispatcher = registry.dispatcher_registry[target]
 
     def wrapper(func):
         if extending.is_jitted(func):
@@ -265,7 +252,7 @@ def njit(*args, **kws):
     return jit(*args, **kws)
 
 
-def cfunc(sig, locals={}, cache=False, pipeline_class=None, **options):
+def cfunc(sig, locals={}, cache=False, **options):
     """
     This decorator is used to compile a Python function into a C callback
     usable with foreign C libraries.
@@ -280,10 +267,7 @@ def cfunc(sig, locals={}, cache=False, pipeline_class=None, **options):
 
     def wrapper(func):
         from numba.core.ccallback import CFunc
-        additional_args = {}
-        if pipeline_class is not None:
-            additional_args['pipeline_class'] = pipeline_class
-        res = CFunc(func, sig, locals=locals, options=options, **additional_args)
+        res = CFunc(func, sig, locals=locals, options=options)
         if cache:
             res.enable_caching()
         res.compile()

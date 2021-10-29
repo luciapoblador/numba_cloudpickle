@@ -24,7 +24,7 @@ def delitem_usecase(x):
 
 
 forceobj = Flags()
-forceobj.force_pyobject = True
+forceobj.set("force_pyobject")
 
 
 def loop_nest_3(x, y):

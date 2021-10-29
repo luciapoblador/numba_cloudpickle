@@ -9,6 +9,7 @@ from functools import reduce
 
 import numpy as np
 
+from numba.core.utils import longint
 from numba.np.ufunc.ufuncbuilder import _BaseUFuncBuilder, parse_identity
 from numba.core import types, sigutils
 from numba.core.typing import signature
@@ -90,13 +91,16 @@ class UFuncMechanism(object):
         Get all arguments in array form
         """
         for i, arg in enumerate(self.args):
-            if self.is_device_array(arg):
+            if isinstance(arg, np.ndarray):
+                self.arrays[i] = arg
+            elif self.is_device_array(arg):
                 self.arrays[i] = self.as_device_array(arg)
-            elif isinstance(arg, (int, float, complex, np.number)):
+            elif isinstance(arg, (int, longint, float, complex, np.number)):
                 # Is scalar
                 self.scalarpos.append(i)
             else:
-                self.arrays[i] = np.asarray(arg)
+                raise TypeError("argument #%d has invalid type of %s" \
+                % (i + 1, type(arg) ))
 
     def _fill_argtypes(self):
         """
@@ -104,7 +108,7 @@ class UFuncMechanism(object):
         """
         for i, ary in enumerate(self.arrays):
             if ary is not None:
-                self.argtypes[i] = np.asarray(ary).dtype
+                self.argtypes[i] = ary.dtype
 
     def _resolve_signature(self):
         """Resolve signature.
@@ -362,8 +366,7 @@ class DeviceVectorize(_BaseUFuncBuilder):
                 warnings.warn("nopython kwarg for cuda target is redundant",
                               RuntimeWarning)
             else:
-                fmt = "Unrecognized options. "
-                fmt += "cuda vectorize target does not support option: '%s'"
+                fmt = "cuda vectorize target does not support option: '%s'"
                 raise KeyError(fmt % opt)
         self.py_func = func
         self.identity = parse_identity(identity)

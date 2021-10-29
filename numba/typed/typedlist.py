@@ -10,39 +10,22 @@ it should really quack like the CPython `list`.
 """
 from collections.abc import MutableSequence
 
-from numba.core.types import ListType
+from numba.core.types import ListType, TypeRef
 from numba.core.imputils import numba_typeref_ctor
 from numba.core.dispatcher import Dispatcher
 from numba.core import types, config, cgutils
 from numba import njit, typeof
 from numba.core.extending import (
+    overload_method,
     overload,
     box,
     unbox,
     NativeValue,
     type_callable,
-    overload_classmethod,
 )
 from numba.typed import listobject
 from numba.core.errors import TypingError, LoweringError
 from numba.core.typing.templates import Signature
-import typing as pt
-import sys
-
-
-Int_or_Slice = pt.Union["pt.SupportsIndex", slice]
-
-
-if sys.version_info >= (3, 8):
-    T_co = pt.TypeVar('T_co', covariant=True)
-
-    class _Sequence(pt.Protocol[T_co]):
-        def __getitem__(self, i: int) -> T_co:
-            ...
-
-        def __len__(self) -> int:
-            ...
-
 
 DEFAULT_ALLOCATED = listobject.DEFAULT_ALLOCATED
 
@@ -187,11 +170,7 @@ def _from_meminfo_ptr(ptr, listtype):
     return List(meminfo=ptr, lsttype=listtype)
 
 
-T = pt.TypeVar('T')
-T_or_ListT = pt.Union[T, 'List[T]']
-
-
-class List(MutableSequence, pt.Generic[T]):
+class List(MutableSequence):
     """A typed-list usable in Numba compiled functions.
 
     Implements the MutableSequence interface.
@@ -299,7 +278,7 @@ class List(MutableSequence, pt.Generic[T]):
         lsttype = types.ListType(typeof(item))
         self._list_type, self._opaque = self._parse_arg(lsttype)
 
-    def __len__(self) -> int:
+    def __len__(self):
         if not self._typed:
             return 0
         else:
@@ -338,61 +317,47 @@ class List(MutableSequence, pt.Generic[T]):
     def __ge__(self, other):
         return _ge(self, other)
 
-    def append(self, item: T) -> None:
+    def append(self, item):
         if not self._typed:
             self._initialise_list(item)
         _append(self, item)
 
-    # noqa F811 comments required due to github.com/PyCQA/pyflakes/issues/592
-    # noqa E704 required to follow overload style of using ... in the same line
-    @pt.overload  # type: ignore[override]
-    def __setitem__(self, i: int, o: T) -> None: ...  # noqa: F811, E704
-    @pt.overload
-    def __setitem__(self, s: slice, o: 'List[T]') -> None: ...  # noqa: F811, E704, E501
-
-    def __setitem__(self, i: Int_or_Slice, item: T_or_ListT) -> None:  # noqa: F811, E501
+    def __setitem__(self, i, item):
         if not self._typed:
             self._initialise_list(item)
         _setitem(self, i, item)
 
-    # noqa F811 comments required due to github.com/PyCQA/pyflakes/issues/592
-    # noqa E704 required to follow overload style of using ... in the same line
-    @pt.overload
-    def __getitem__(self, i: int) -> T: ...  # noqa: F811, E704
-    @pt.overload
-    def __getitem__(self, i: slice) -> 'List[T]': ...  # noqa: F811, E704
-
-    def __getitem__(self, i: Int_or_Slice) -> T_or_ListT:  # noqa: F811
+    def __getitem__(self, i):
         if not self._typed:
             raise IndexError
         else:
             return _getitem(self, i)
 
-    def __iter__(self) -> pt.Iterator[T]:
+    def __iter__(self):
         for i in range(len(self)):
             yield self[i]
 
-    def __contains__(self, item: T) -> bool:  # type: ignore[override]
+    def __contains__(self, item):
         return _contains(self, item)
 
-    def __delitem__(self, i: Int_or_Slice) -> None:
+    def __delitem__(self, i):
         _delitem(self, i)
 
-    def insert(self, i: int, item: T) -> None:
+    def insert(self, i, item):
         if not self._typed:
             self._initialise_list(item)
         _insert(self, i, item)
 
-    def count(self, item: T) -> int:
+    def count(self, item):
         return _count(self, item)
 
-    def pop(self, i: "pt.SupportsIndex" = -1) -> T:
+    def pop(self, i=-1):
         return _pop(self, i)
 
-    def extend(self, iterable: "_Sequence[T]") -> None: #type: ignore[override]
+    def extend(self, iterable):
         # Empty iterable, do nothing
         if len(iterable) == 0:
-            return None
+            return self
         if not self._typed:
             # Need to get the first element of the iterable to initialise the
             # type of the list. FIXME: this may be a problem if the iterable
@@ -400,7 +365,7 @@ class List(MutableSequence, pt.Generic[T]):
             self._initialise_list(iterable[0])
         return _extend(self, iterable)
 
-    def remove(self, item: T) -> None:
+    def remove(self, item):
         return _remove(self, item)
 
     def clear(self):
@@ -412,8 +377,7 @@ class List(MutableSequence, pt.Generic[T]):
     def copy(self):
         return _copy(self)
 
-    def index(self, item: T, start: pt.Optional[int] = None,
-              stop: pt.Optional[int] = None) -> int:
+    def index(self, item, start=None, stop=None):
         return _index(self, item, start, stop)
 
     def sort(self, key=None, reverse=False):
@@ -430,12 +394,7 @@ class List(MutableSequence, pt.Generic[T]):
         buf = []
         for x in self:
             buf.append("{}".format(x))
-        # Check whether the code was invoked from IPython shell
-        try:
-            get_ipython
-            return '[{0}, ...]'.format(', '.join(buf[:1000]))
-        except (NameError, IndexError):
-            return '[{0}]'.format(', '.join(buf))
+        return '[{0}]'.format(', '.join(buf))
 
     def __repr__(self):
         body = str(self)
@@ -443,7 +402,8 @@ class List(MutableSequence, pt.Generic[T]):
         return "{prefix}({body})".format(prefix=prefix, body=body)
 
 
-@overload_classmethod(ListType, 'empty_list')
+# XXX: should we have a better way to classmethod
+@overload_method(TypeRef, 'empty_list')
 def typedlist_empty(cls, item_type, allocated=DEFAULT_ALLOCATED):
     if cls.instance_type is not ListType:
         return
@@ -495,58 +455,27 @@ def unbox_listtype(typ, val, c):
     context = c.context
     builder = c.builder
 
-    # Check that `type(val) is Dict`
-    list_type = c.pyapi.unserialize(c.pyapi.serialize_object(List))
-    valtype = c.pyapi.object_type(val)
-    same_type = builder.icmp_unsigned("==", valtype, list_type)
+    miptr = c.pyapi.object_getattr_string(val, '_opaque')
 
-    with c.builder.if_else(same_type) as (then, orelse):
-        with then:
-            miptr = c.pyapi.object_getattr_string(val, '_opaque')
+    native = c.unbox(types.MemInfoPointer(types.voidptr), miptr)
 
-            native = c.unbox(types.MemInfoPointer(types.voidptr), miptr)
+    mi = native.value
+    ctor = cgutils.create_struct_proxy(typ)
+    lstruct = ctor(context, builder)
 
-            mi = native.value
-            ctor = cgutils.create_struct_proxy(typ)
-            lstruct = ctor(context, builder)
+    data_pointer = context.nrt.meminfo_data(builder, mi)
+    data_pointer = builder.bitcast(
+        data_pointer,
+        listobject.ll_list_type.as_pointer(),
+    )
 
-            data_pointer = context.nrt.meminfo_data(builder, mi)
-            data_pointer = builder.bitcast(
-                data_pointer,
-                listobject.ll_list_type.as_pointer(),
-            )
+    lstruct.data = builder.load(data_pointer)
+    lstruct.meminfo = mi
 
-            lstruct.data = builder.load(data_pointer)
-            lstruct.meminfo = mi
+    lstobj = lstruct._getvalue()
+    c.pyapi.decref(miptr)
 
-            lstobj = lstruct._getvalue()
-            c.pyapi.decref(miptr)
-            bb_unboxed = c.builder.basic_block
-
-        with orelse:
-            # Raise error on incorrect type
-            c.pyapi.err_format(
-                "PyExc_TypeError",
-                "can't unbox a %S as a %S",
-                valtype, list_type,
-            )
-            bb_else = c.builder.basic_block
-
-    # Phi nodes to gather the output
-    lstobj_res = c.builder.phi(lstobj.type)
-    is_error_res = c.builder.phi(cgutils.bool_t)
-
-    lstobj_res.add_incoming(lstobj, bb_unboxed)
-    lstobj_res.add_incoming(lstobj.type(None), bb_else)
-
-    is_error_res.add_incoming(cgutils.false_bit, bb_unboxed)
-    is_error_res.add_incoming(cgutils.true_bit, bb_else)
-
-    # cleanup
-    c.pyapi.decref(list_type)
-    c.pyapi.decref(valtype)
-
-    return NativeValue(lstobj_res, is_error=is_error_res)
+    return NativeValue(lstobj)
 
 
 #

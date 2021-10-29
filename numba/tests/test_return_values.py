@@ -12,7 +12,7 @@ from numba.core.errors import TypingError
 
 
 enable_pyobj_flags = Flags()
-enable_pyobj_flags.enable_pyobject = True
+enable_pyobj_flags.set("enable_pyobject")
 no_pyobj_flags = Flags()
 
 

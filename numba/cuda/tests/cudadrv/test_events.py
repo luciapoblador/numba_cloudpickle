@@ -33,6 +33,5 @@ class TestCudaEvent(CUDATestCase):
         # Exercise the code path
         evtstart.elapsed_time(evtend)
 
-
 if __name__ == '__main__':
     unittest.main()

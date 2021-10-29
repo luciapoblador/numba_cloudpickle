@@ -1,7 +1,6 @@
 import numpy as np
 
 from numba.core.typing.typeof import typeof
-from numba.core.typing.asnumbatype import as_numba_type
 
 
 def pndindex(*args):
@@ -93,7 +92,6 @@ def literal_unroll(container):
 
 __all__ = [
     'typeof',
-    'as_numba_type',
     'prange',
     'pndindex',
     'gdb',

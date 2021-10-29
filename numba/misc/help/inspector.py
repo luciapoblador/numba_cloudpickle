@@ -295,7 +295,6 @@ class ReSTFormatter(Formatter):
     def write_supported_item(self, modname, itemname, typename, explained,
                              sources, alias):
         self.print('.. function:: {}.{}'.format(modname, itemname))
-        self.print('   :noindex:')
         self.print()
 
         if alias:

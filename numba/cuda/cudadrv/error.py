@@ -2,10 +2,6 @@ class CudaDriverError(Exception):
     pass
 
 
-class CudaRuntimeError(Exception):
-    pass
-
-
 class CudaSupportError(ImportError):
     pass
 

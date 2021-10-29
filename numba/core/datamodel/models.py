@@ -1,5 +1,4 @@
 from functools import partial
-from collections import deque
 
 from llvmlite import ir
 
@@ -104,21 +103,11 @@ class DataModel(object):
         """
         Recursively list all frontend types involved in this model.
         """
-        types = [self._fe_type]
-        queue = deque([self])
-        while len(queue) > 0:
-            dm = queue.popleft()
+        return [self._fe_type] + self.inner_types()
 
-            for i_dm in dm.inner_models():
-                if i_dm._fe_type not in types:
-                    queue.append(i_dm)
-                    types.append(i_dm._fe_type)
-
-        return types
-
-    def inner_models(self):
+    def inner_types(self):
         """
-        List all *inner* models.
+        List all *inner* frontend types.
         """
         return []
 
@@ -174,7 +163,6 @@ class OmittedArgDataModel(DataModel):
 
 
 @register_default(types.Boolean)
-@register_default(types.BooleanLiteral)
 class BooleanModel(DataModel):
     _bit_type = ir.IntType(1)
     _byte_type = ir.IntType(8)
@@ -314,6 +302,7 @@ class EnumModel(ProxyModel):
 @register_default(types.Dummy)
 @register_default(types.ExceptionInstance)
 @register_default(types.ExternalFunction)
+@register_default(types.Macro)
 @register_default(types.EnumClass)
 @register_default(types.IntEnumClass)
 @register_default(types.NumberClass)
@@ -337,8 +326,8 @@ class OpaqueModel(PrimitiveModel):
 @register_default(types.MemInfoPointer)
 class MemInfoModel(OpaqueModel):
 
-    def inner_models(self):
-        return [self._dmm.lookup(self._fe_type.dtype)]
+    def inner_types(self):
+        return self._dmm.lookup(self._fe_type.dtype).traverse_types()
 
     def has_nrt_meminfo(self):
         return True
@@ -496,8 +485,8 @@ class UniTupleModel(DataModel):
         return [(self._fe_type.dtype, partial(getter, i))
                 for i in range(self._count)]
 
-    def inner_models(self):
-        return [self._elem_model]
+    def inner_types(self):
+        return self._elem_model.traverse_types()
 
 
 class CompositeModel(DataModel):
@@ -711,8 +700,11 @@ class StructModel(CompositeModel):
 
         return [(self.get_type(k), partial(getter, k)) for k in self._fields]
 
-    def inner_models(self):
-        return self._models
+    def inner_types(self):
+        types = []
+        for dm in self._models:
+            types += dm.traverse_types()
+        return types
 
 
 @register_default(types.Complex)
@@ -1077,7 +1069,6 @@ class UniTupleIter(StructModel):
         super(UniTupleIter, self).__init__(dmm, fe_type, members)
 
 
-@register_default(types.misc.SliceLiteral)
 @register_default(types.SliceType)
 class SliceModel(StructModel):
     def __init__(self, dmm, fe_type):

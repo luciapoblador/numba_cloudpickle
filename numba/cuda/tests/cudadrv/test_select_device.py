@@ -39,3 +39,4 @@ class TestSelectDevice(ContextResettingTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

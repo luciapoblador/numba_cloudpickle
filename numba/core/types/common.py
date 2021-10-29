@@ -49,10 +49,7 @@ class Buffer(IterableType, ArrayCompatible):
         from .misc import unliteral
 
         if isinstance(dtype, Buffer):
-            msg = ("The dtype of a Buffer type cannot itself be a Buffer type, "
-                   "this is unsupported behaviour."
-                   "\nThe dtype requested for the unsupported Buffer was: {}.")
-            raise TypeError(msg.format(dtype))
+            raise TypeError("Buffer dtype cannot be buffer, have dtype: {}".format(dtype))
         if layout not in self.LAYOUTS:
             raise ValueError("Invalid layout '%s'" % layout)
         self.dtype = unliteral(dtype)

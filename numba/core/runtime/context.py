@@ -24,7 +24,7 @@ class NRTContext(object):
 
         mod = builder.module
         fnty = ir.FunctionType(cgutils.voidptr_t, [cgutils.intp_t])
-        fn = cgutils.get_or_insert_function(mod, fnty, "NRT_Allocate")
+        fn = mod.get_or_insert_function(fnty, name="NRT_Allocate")
         fn.return_value.add_attribute("noalias")
         return builder.call(fn, [size])
 
@@ -36,7 +36,7 @@ class NRTContext(object):
 
         mod = builder.module
         fnty = ir.FunctionType(ir.VoidType(), [cgutils.voidptr_t])
-        fn = cgutils.get_or_insert_function(mod, fnty, "NRT_Free")
+        fn = mod.get_or_insert_function(fnty, name="NRT_Free")
         return builder.call(fn, [ptr])
 
     def meminfo_alloc(self, builder, size):
@@ -49,7 +49,7 @@ class NRTContext(object):
 
         mod = builder.module
         fnty = ir.FunctionType(cgutils.voidptr_t, [cgutils.intp_t])
-        fn = cgutils.get_or_insert_function(mod, fnty, "NRT_MemInfo_alloc_safe")
+        fn = mod.get_or_insert_function(fnty, name="NRT_MemInfo_alloc_safe")
         fn.return_value.add_attribute("noalias")
         return builder.call(fn, [size])
 
@@ -59,8 +59,8 @@ class NRTContext(object):
         mod = builder.module
         fnty = ir.FunctionType(cgutils.voidptr_t,
                                [cgutils.intp_t, cgutils.voidptr_t])
-        fn = cgutils.get_or_insert_function(mod, fnty,
-                                            "NRT_MemInfo_alloc_dtor_safe")
+        fn = mod.get_or_insert_function(fnty,
+                                        name="NRT_MemInfo_alloc_dtor_safe")
         fn.return_value.add_attribute("noalias")
         return builder.call(fn, [size,
                                  builder.bitcast(dtor, cgutils.voidptr_t)])
@@ -78,8 +78,8 @@ class NRTContext(object):
         mod = builder.module
         u32 = ir.IntType(32)
         fnty = ir.FunctionType(cgutils.voidptr_t, [cgutils.intp_t, u32])
-        fn = cgutils.get_or_insert_function(mod, fnty,
-                                            "NRT_MemInfo_alloc_safe_aligned")
+        fn = mod.get_or_insert_function(fnty,
+                                        name="NRT_MemInfo_alloc_safe_aligned")
         fn.return_value.add_attribute("noalias")
         if isinstance(align, int):
             align = self._context.get_constant(types.uint32, align)
@@ -99,8 +99,7 @@ class NRTContext(object):
 
         mod = builder.module
         fnty = ir.FunctionType(cgutils.voidptr_t, [cgutils.intp_t])
-        fn = cgutils.get_or_insert_function(mod, fnty,
-                                            "NRT_MemInfo_new_varsize")
+        fn = mod.get_or_insert_function(fnty, name="NRT_MemInfo_new_varsize")
         fn.return_value.add_attribute("noalias")
         return builder.call(fn, [size])
 
@@ -114,8 +113,8 @@ class NRTContext(object):
         mod = builder.module
         fnty = ir.FunctionType(cgutils.voidptr_t,
                                [cgutils.intp_t, cgutils.voidptr_t])
-        fn = cgutils.get_or_insert_function(
-            mod, fnty, "NRT_MemInfo_new_varsize_dtor")
+        fn = mod.get_or_insert_function(
+            fnty, name="NRT_MemInfo_new_varsize_dtor")
         return builder.call(fn, [size, dtor])
 
     def meminfo_varsize_alloc(self, builder, meminfo, size):
@@ -150,8 +149,7 @@ class NRTContext(object):
         mod = builder.module
         fnty = ir.FunctionType(ir.VoidType(),
                                [cgutils.voidptr_t, cgutils.voidptr_t])
-        fn = cgutils.get_or_insert_function(mod, fnty,
-                                            "NRT_MemInfo_varsize_free")
+        fn = mod.get_or_insert_function(fnty, name="NRT_MemInfo_varsize_free")
         return builder.call(fn, (meminfo, ptr))
 
     def _call_varsize_alloc(self, builder, meminfo, size, funcname):
@@ -160,7 +158,7 @@ class NRTContext(object):
         mod = builder.module
         fnty = ir.FunctionType(cgutils.voidptr_t,
                                [cgutils.voidptr_t, cgutils.intp_t])
-        fn = cgutils.get_or_insert_function(mod, fnty, funcname)
+        fn = mod.get_or_insert_function(fnty, name=funcname)
         fn.return_value.add_attribute("noalias")
         return builder.call(fn, [meminfo, size])
 
@@ -175,8 +173,8 @@ class NRTContext(object):
         from numba.core.runtime.nrtdynmod import meminfo_data_ty
 
         mod = builder.module
-        fn = cgutils.get_or_insert_function(mod, meminfo_data_ty,
-                                            "NRT_MemInfo_data_fast")
+        fn = mod.get_or_insert_function(meminfo_data_ty,
+                                        name="NRT_MemInfo_data_fast")
         return builder.call(fn, [meminfo])
 
     def get_meminfos(self, builder, ty, val):
@@ -206,8 +204,7 @@ class NRTContext(object):
         meminfos = self.get_meminfos(builder, typ, value)
         for _, mi in meminfos:
             mod = builder.module
-            fn = cgutils.get_or_insert_function(mod, incref_decref_ty,
-                                                funcname)
+            fn = mod.get_or_insert_function(incref_decref_ty, name=funcname)
             # XXX "nonnull" causes a crash in test_dyn_array: can this
             # function be called with a NULL pointer?
             fn.args[0].add_attribute("noalias")
@@ -233,7 +230,7 @@ class NRTContext(object):
 
         fnty = ir.FunctionType(cgutils.voidptr_t, ())
         mod = builder.module
-        fn = cgutils.get_or_insert_function(mod, fnty, "NRT_get_api")
+        fn = mod.get_or_insert_function(fnty, name="NRT_get_api")
         return builder.call(fn, ())
 
     def eh_check(self, builder):

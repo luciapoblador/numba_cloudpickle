@@ -1,11 +1,10 @@
 from abc import ABCMeta, abstractmethod, abstractproperty
-from typing import Dict as ptDict, Type as ptType
 import itertools
 import weakref
 
 import numpy as np
 
-from numba.core.utils import cached_property
+from numba.core.utils import cached_property, add_metaclass
 
 # Types are added to a global registry (_typecache) in order to assign
 # them unique integer codes for fast matching in _dispatcher.c.
@@ -22,7 +21,7 @@ def _autoincr():
     assert n < 2 ** 32, "Limited to 4 billion types"
     return n
 
-_typecache: ptDict[weakref.ref, weakref.ref] = {}
+_typecache = {}
 
 def _on_type_disposal(wr, _pop=_typecache.pop):
     _pop(wr, None)
@@ -77,7 +76,8 @@ def _type_reconstructor(reconstructor, reconstructor_args, state):
     return type(obj)._intern(obj)
 
 
-class Type(metaclass=_TypeMetaclass):
+@add_metaclass(_TypeMetaclass)
+class Type(object):
     """
     The base class for all Numba types.
     It is essential that proper equality comparison is implemented.  The
@@ -405,7 +405,7 @@ class Literal(Type):
     # for constructing a numba type for a given Python type.
     # It is used in `literal(val)` function.
     # To add new Literal subclass, register a new mapping to this dict.
-    ctor_map: ptDict[type, ptType['Literal']] = {}
+    ctor_map = {}
 
     # *_literal_type_cache* is used to cache the numba type of the given value.
     _literal_type_cache = None
@@ -440,15 +440,7 @@ class Literal(Type):
         if self._literal_type_cache is None:
             from numba.core import typing
             ctx = typing.Context()
-            try:
-                res = ctx.resolve_value_type(self.literal_value)
-            except ValueError:
-                # Not all literal types have a literal_value that can be
-                # resolved to a type, for example, LiteralStrKeyDict has a
-                # literal_value that is a python dict for which there's no
-                # `typeof` support.
-                msg = "{} has no attribute 'literal_type'".format(self)
-                raise AttributeError(msg)
+            res = ctx.resolve_value_type(self.literal_value)
             self._literal_type_cache = res
 
         return self._literal_type_cache
@@ -463,10 +455,6 @@ class TypeRef(Dummy):
     def __init__(self, instance_type):
         self.instance_type = instance_type
         super(TypeRef, self).__init__('typeref[{}]'.format(self.instance_type))
-
-    @property
-    def key(self):
-        return self.instance_type
 
 
 class InitialValue(object):

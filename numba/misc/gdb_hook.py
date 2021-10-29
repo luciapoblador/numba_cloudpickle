@@ -22,7 +22,7 @@ def _confirm_gdb():
     if not (os.path.exists(gdbloc) and os.path.isfile(gdbloc)):
         msg = ('Is gdb present? Location specified (%s) does not exist. The gdb'
                ' binary location can be set using Numba configuration, see: '
-               'https://numba.pydata.org/numba-doc/latest/reference/envvars.html'  # noqa: E501
+               'http://numba.pydata.org/numba-doc/latest/reference/envvars.html'
                )
         raise RuntimeError(msg % config.GDB_BINARY)
     # Is Yama being used as a kernel security module and if so is ptrace_scope
@@ -103,30 +103,30 @@ def init_gdb_codegen(cgctx, builder, signature, args,
 
     # insert getpid, getpid is always successful, call without concern!
     fnty = ir.FunctionType(int32_t, tuple())
-    getpid = cgutils.get_or_insert_function(mod, fnty, "getpid")
+    getpid = mod.get_or_insert_function(fnty, "getpid")
 
     # insert snprintf
     # int snprintf(char *str, size_t size, const char *format, ...);
     fnty = ir.FunctionType(
         int32_t, (char_ptr, intp_t, char_ptr), var_arg=True)
-    snprintf = cgutils.get_or_insert_function(mod, fnty, "snprintf")
+    snprintf = mod.get_or_insert_function(fnty, "snprintf")
 
     # insert fork
     fnty = ir.FunctionType(int32_t, tuple())
-    fork = cgutils.get_or_insert_function(mod, fnty, "fork")
+    fork = mod.get_or_insert_function(fnty, "fork")
 
     # insert execl
     fnty = ir.FunctionType(int32_t, (char_ptr, char_ptr), var_arg=True)
-    execl = cgutils.get_or_insert_function(mod, fnty, "execl")
+    execl = mod.get_or_insert_function(fnty, "execl")
 
     # insert sleep
     fnty = ir.FunctionType(int32_t, (int32_t,))
-    sleep = cgutils.get_or_insert_function(mod, fnty, "sleep")
+    sleep = mod.get_or_insert_function(fnty, "sleep")
 
     # insert break point
     fnty = ir.FunctionType(ir.VoidType(), tuple())
-    breakpoint = cgutils.get_or_insert_function(mod, fnty,
-                                                "numba_gdb_breakpoint")
+    breakpoint = mod.get_or_insert_function(fnty,
+                                            "numba_gdb_breakpoint")
 
     # do the work
     parent_pid = builder.call(getpid, tuple())
@@ -210,8 +210,8 @@ def gen_bp_impl():
         def codegen(cgctx, builder, signature, args):
             mod = builder.module
             fnty = ir.FunctionType(ir.VoidType(), tuple())
-            breakpoint = cgutils.get_or_insert_function(mod, fnty,
-                                                        "numba_gdb_breakpoint")
+            breakpoint = mod.get_or_insert_function(fnty,
+                                                    "numba_gdb_breakpoint")
             builder.call(breakpoint, tuple())
             return cgctx.get_constant(types.none, None)
         return function_sig, codegen

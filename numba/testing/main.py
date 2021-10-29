@@ -158,6 +158,11 @@ class NumbaTestProgram(unittest.main):
     random_seed = 42
 
     def __init__(self, *args, **kwargs):
+        # Disable interpreter fallback if we are running the test suite
+        if config.COMPATIBILITY_MODE:
+            warnings.warn("Unset INTERPRETER_FALLBACK")
+            config.COMPATIBILITY_MODE = False
+
         topleveldir = kwargs.pop('topleveldir', None)
         kwargs['testLoader'] = TestLoader(topleveldir)
 
@@ -198,18 +203,10 @@ class NumbaTestProgram(unittest.main):
         parser.add_argument('-j', '--slice', dest='useslice', nargs='?',
                             type=str, const="None",
                             help='Slice the test sequence')
-
-        def git_diff_str(x):
-            if x != 'ancestor':
-                raise ValueError("invalid option for --gitdiff")
-            return x
-
-        parser.add_argument('-g', '--gitdiff', dest='gitdiff', type=git_diff_str,
-                            default=False, nargs='?',
+        parser.add_argument('-g', '--gitdiff', dest='gitdiff',
+                            action='store_true',
                             help=('Run tests from changes made against '
-                                  'origin/master as identified by `git diff`. '
-                                  'If set to "ancestor", the diff compares '
-                                  'against the common ancestor.'))
+                                  'origin/master as identified by `git diff`'))
         return parser
 
     def _handle_tags(self, argv, tagstr):
@@ -274,11 +271,8 @@ class NumbaTestProgram(unittest.main):
             self.test = _choose_random_tests(self.test, self.random_select,
                                              self.random_seed)
 
-        if self.gitdiff is not False:
-            self.test = _choose_gitdiff_tests(
-                self.test,
-                use_common_ancestor=(self.gitdiff == 'ancestor'),
-            )
+        if self.gitdiff:
+            self.test = _choose_gitdiff_tests(self.test)
 
         if self.verbosity <= 0:
             # We aren't interested in informational messages / warnings when
@@ -345,13 +339,10 @@ class NumbaTestProgram(unittest.main):
 # it's important for doing the CI "slice tests" that these are run at the end
 # See notes in `_flatten_suite` for why. Simple substring matching is used to
 # determine a match.
-_GENERATED = (
-    "numba.cuda.tests.cudapy.test_libdevice.TestLibdeviceCompilation",
-    "numba.tests.test_num_threads",
-    "numba.tests.test_parallel_backend",
-    "numba.tests.test_svml",
-    "numba.tests.test_ufuncs",
-)
+_GENERATED = ("numba.tests.test_num_threads",
+              "numba.tests.test_parallel_backend",
+              "numba.tests.test_svml",
+              "numba.tests.test_ufuncs",)
 
 
 def _flatten_suite_inner(test):
@@ -390,18 +381,14 @@ def _flatten_suite(test):
     return tests
 
 
-def _choose_gitdiff_tests(tests, *, use_common_ancestor=False):
+def _choose_gitdiff_tests(tests):
     try:
         from git import Repo
     except ImportError:
         raise ValueError("gitpython needed for git functionality")
     repo = Repo('.')
     path = os.path.join('numba', 'tests')
-    if use_common_ancestor:
-        print(f"Git diff by common ancestor")
-        target = 'origin/master...HEAD'
-    else:
-        target = 'origin/master..HEAD'
+    target = 'origin/master..HEAD'
     gdiff_paths = repo.git.diff(target, path, name_only=True).split()
     # normalise the paths as they are unix style from repo.git.diff
     gdiff_paths = [os.path.normpath(x) for x in gdiff_paths]

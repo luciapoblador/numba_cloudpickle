@@ -9,7 +9,6 @@ from numba.cuda.cudadrv import driver
 
 class TestContextStack(CUDATestCase):
     def setUp(self):
-        super().setUp()
         # Reset before testing
         cuda.close()
 
@@ -29,14 +28,10 @@ class TestContextStack(CUDATestCase):
 class TestContextAPI(CUDATestCase):
 
     def tearDown(self):
-        super().tearDown()
         cuda.close()
 
     def test_context_memory(self):
-        try:
-            mem = cuda.current_context().get_memory_info()
-        except NotImplementedError:
-            self.skipTest('EMM Plugin does not implement get_memory_info()')
+        mem = cuda.current_context().get_memory_info()
 
         self.assertIsInstance(mem.free, numbers.Number)
         self.assertEquals(mem.free, mem[0])
@@ -75,7 +70,6 @@ class TestContextAPI(CUDATestCase):
 @skip_on_cudasim('CUDA HW required')
 class Test3rdPartyContext(CUDATestCase):
     def tearDown(self):
-        super().tearDown()
         cuda.close()
 
     def test_attached_primary(self, extra_work=lambda: None):

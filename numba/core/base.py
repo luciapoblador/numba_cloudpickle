@@ -13,14 +13,15 @@ from llvmlite.llvmpy.core import Type, Constant, LLVMException
 import llvmlite.binding as ll
 
 from numba.core import types, utils, typing, datamodel, debuginfo, funcdesc, config, cgutils, imputils
-from numba.core import event
 from numba import _dynfunc, _helperlib
 from numba.core.compiler_lock import global_compiler_lock
 from numba.core.pythonapi import PythonAPI
+from numba.np import arrayobj
 from numba.core.imputils import (user_function, user_generator,
                        builtin_registry, impl_ret_borrowed,
                        RegistryLoader)
 from numba.cpython import builtins
+
 
 GENERIC_POINTER = Type.pointer(Type.int(8))
 PYOBJECT = GENERIC_POINTER
@@ -229,14 +230,11 @@ class BaseContext(object):
     # the function descriptor
     fndesc = None
 
-    def __init__(self, typing_context, target):
+    def __init__(self, typing_context):
         _load_global_helpers()
 
         self.address_size = utils.MACHINE_BITS
         self.typing_context = typing_context
-        from numba.core.target_extension import target_registry
-        self.target_name = target
-        self.target = target_registry[target]
 
         # A mapping of installed registries to their loaders
         self._registries = {}
@@ -270,15 +268,19 @@ class BaseContext(object):
         Refresh context with new declarations from known registries.
         Useful for third-party extensions.
         """
-        # load target specific registries
-        self.load_additional_registries()
+        # Populate built-in registry
+        from numba.cpython import (slicing, tupleobj, enumimpl, hashing, heapq,
+                                   iterators, numbers, rangeobj)
+        from numba.core import optional
+        from numba.misc import gdb_hook, literal
+        from numba.np import linalg, polynomial, arraymath
 
-        # Populate the builtin registry, this has to happen after loading
-        # additional registries as some of the "additional" registries write
-        # their implementations into the builtin_registry and would be missed if
-        # this ran first.
+        try:
+            from numba.np import npdatetime
+        except NotImplementedError:
+            pass
         self.install_registry(builtin_registry)
-
+        self.load_additional_registries()
         # Also refresh typing context, since @overload declarations can
         # affect it.
         self.typing_context.refresh()
@@ -425,7 +427,7 @@ class BaseContext(object):
 
     def declare_function(self, module, fndesc):
         fnty = self.call_conv.get_function_type(fndesc.restype, fndesc.argtypes)
-        fn = cgutils.get_or_insert_function(module, fnty, fndesc.mangled_name)
+        fn = module.get_or_insert_function(fnty, name=fndesc.mangled_name)
         self.call_conv.decorate_function(fn, fndesc.args, fndesc.argtypes, noalias=fndesc.noalias)
         if fndesc.inline:
             fn.attributes.add('alwaysinline')
@@ -433,7 +435,7 @@ class BaseContext(object):
 
     def declare_external_function(self, module, fndesc):
         fnty = self.get_external_function_type(fndesc)
-        fn = cgutils.get_or_insert_function(module, fnty, fndesc.mangled_name)
+        fn = module.get_or_insert_function(fnty, name=fndesc.mangled_name)
         assert fn.is_declaration
         for ak, av in zip(fndesc.args, fn.args):
             av.name = "arg.%s" % ak
@@ -604,8 +606,8 @@ class BaseContext(object):
                 return None
             else:
                 pyval = getattr(typ.pymod, attr)
+                llval = self.get_constant(attrty, pyval)
                 def imp(context, builder, typ, val, attr):
-                    llval = self.get_constant_generic(builder, attrty, pyval)
                     return impl_ret_borrowed(context, builder, attrty, llval)
                 return imp
 
@@ -761,9 +763,9 @@ class BaseContext(object):
         """
         module = builder.function.module
         try:
-            gv = module.globals[name]
-        except KeyError:
-            gv = cgutils.add_global_variable(module, typ, name)
+            gv = module.get_global_variable_named(name)
+        except LLVMException:
+            gv = module.add_global_variable(typ, name)
             if dllimport and self.aot_mode and sys.platform == 'win32':
                 gv.storage_class = "dllimport"
         return gv
@@ -784,7 +786,7 @@ class BaseContext(object):
         mod = builder.module
         cstring = GENERIC_POINTER
         fnty = Type.function(Type.int(), [cstring])
-        puts = cgutils.get_or_insert_function(mod, fnty, "puts")
+        puts = mod.get_or_insert_function(fnty, "puts")
         return builder.call(puts, [text])
 
     def debug_print(self, builder, text):
@@ -799,7 +801,7 @@ class BaseContext(object):
         else:
             cstr = format_string
         fnty = Type.function(Type.int(), (GENERIC_POINTER,), var_arg=True)
-        fn = cgutils.get_or_insert_function(mod, fnty, "printf")
+        fn = mod.get_or_insert_function(fnty, "printf")
         return builder.call(fn, (cstr,) + tuple(args))
 
     def get_struct_type(self, struct):
@@ -831,18 +833,10 @@ class BaseContext(object):
             codegen = self.codegen()
             library = codegen.create_library(impl.__name__)
             if flags is None:
-
-                cstk = utils.ConfigStack()
                 flags = compiler.Flags()
-                if cstk:
-                    tls_flags = cstk.top()
-                    if tls_flags.is_set("nrt") and tls_flags.nrt:
-                        flags.nrt = True
-
-            flags.no_compile = True
-            flags.no_cpython_wrapper = True
-            flags.no_cfunc_wrapper = True
-
+            flags.set('no_compile')
+            flags.set('no_cpython_wrapper')
+            flags.set('no_cfunc_wrapper')
             cres = compiler.compile_internal(self.typing_context, self,
                                              library,
                                              impl, sig.args,
@@ -1003,14 +997,12 @@ class BaseContext(object):
         return self._make_helper(builder, typ, ref=ref, kind='data')
 
     def make_array(self, typ):
-        from numba.np import arrayobj
         return arrayobj.make_array(typ)
 
     def populate_array(self, arr, **kwargs):
         """
         Populate array structure.
         """
-        from numba.np import arrayobj
         return arrayobj.populate_array(arr, **kwargs)
 
     def make_complex(self, builder, typ, value=None):
@@ -1088,13 +1080,13 @@ class BaseContext(object):
         the usage of dynamic addresses.  Caching will be disabled.
         """
         assert self.allow_dynamic_globals, "dyn globals disabled in this target"
-        assert isinstance(intaddr, int), 'dyn addr not of int type'
+        assert isinstance(intaddr, utils.INT_TYPES), 'dyn addr not of int type'
         mod = builder.module
         llvoidptr = self.get_value_type(types.voidptr)
         addr = self.get_constant(types.uintp, intaddr).inttoptr(llvoidptr)
         # Use a unique name by embedding the address value
         symname = 'numba.dynamic.globals.{:x}'.format(intaddr)
-        gv = cgutils.add_global_variable(mod, llvoidptr, symname)
+        gv = mod.add_global_variable(llvoidptr, name=symname)
         # Use linkonce linkage to allow merging with other GV of the same name.
         # And, avoid optimization from assuming its value.
         gv.linkage = 'linkonce'
@@ -1128,12 +1120,8 @@ class BaseContext(object):
 
     def create_module(self, name):
         """Create a LLVM module
-        
-        The default implementation in BaseContext always raises a
-        ``NotImplementedError`` exception. Subclasses should implement 
-        this method.
         """
-        raise NotImplementedError
+        return lc.Module(name)
 
     @property
     def active_code_library(self):
@@ -1158,24 +1146,6 @@ class BaseContext(object):
         for lib in libs:
             colib.add_linking_library(lib)
 
-    def get_ufunc_info(self, ufunc_key):
-        """Get the ufunc implementation for a given ufunc object.
-
-        The default implementation in BaseContext always raises a
-        ``NotImplementedError`` exception. Subclasses may raise ``KeyError``
-        to signal that the given ``ufunc_key`` is not available.
-
-        Parameters
-        ----------
-        ufunc_key : NumPy ufunc
-
-        Returns
-        -------
-        res : dict[str, callable]
-            A mapping of a NumPy ufunc type signature to a lower-level
-            implementation.
-        """
-        raise NotImplementedError(f"{self} does not support ufunc")
 
 class _wrap_impl(object):
     """
@@ -1241,19 +1211,3 @@ class _wrap_missing_loc(object):
 
     def __repr__(self):
         return "<wrapped %s>" % self.func
-
-
-@utils.runonce
-def _initialize_llvm_lock_event():
-    """Initial event triggers for LLVM lock
-    """
-    def enter_fn():
-        event.start_event("numba:llvm_lock")
-
-    def exit_fn():
-        event.end_event("numba:llvm_lock")
-
-    ll.ffi.register_lock_callback(enter_fn, exit_fn)
-
-
-_initialize_llvm_lock_event()

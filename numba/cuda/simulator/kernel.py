@@ -5,7 +5,9 @@ import threading
 
 import numpy as np
 
-from .cudadrv.devicearray import FakeCUDAArray, FakeWithinKernelCUDAArray
+from numba.core.utils import reraise
+from .cudadrv.devicearray import to_device, auto_device, \
+    FakeCUDAArray, FakeWithinKernelCUDAArray
 from .kernelapi import Dim3, FakeCUDAModule, swapped_cuda_module
 from ..errors import normalize_kernel_dimensions
 from ..args import wrap_arg, ArgHint
@@ -38,23 +40,6 @@ def _get_kernel_context():
     Get the current kernel context. This is usually done by a device function.
     """
     return _kernel_context
-
-
-class FakeOverload:
-    '''
-    Used only to provide the max_cooperative_grid_blocks method
-    '''
-    def max_cooperative_grid_blocks(self, blockdim):
-        # We can only run one block in a cooperative grid because we have no
-        # mechanism for synchronization between different blocks
-        return 1
-
-
-class FakeOverloadDict(dict):
-    def __getitem__(self, key):
-        # Always return a fake overload for any signature, as we don't keep
-        # track of overloads in the simulator.
-        return FakeOverload()
 
 
 class FakeCUDAKernel(object):
@@ -135,6 +120,7 @@ class FakeCUDAKernel(object):
     def bind(self):
         pass
 
+
     def specialize(self, *args):
         return self
 
@@ -145,11 +131,22 @@ class FakeCUDAKernel(object):
         return self[ntasks, 1, stream, sharedmem]
 
     @property
-    def overloads(self):
-        return FakeOverloadDict()
+    def ptx(self):
+        '''
+        Required in order to proceed through some tests, but serves no functional
+        purpose.
+        '''
+        res = '.const'
+        res += '\n.local'
+        if self._fastmath:
+            res += '\ndiv.full.ftz.f32'
+        return res
+
+
 
 
 # Thread emulation
+
 
 class BlockThread(threading.Thread):
     '''
@@ -166,9 +163,7 @@ class BlockThread(threading.Thread):
         self.daemon = True
         self.abort = False
         blockDim = Dim3(*self._manager._block_dim)
-        self.thread_id = self.threadIdx.x + (blockDim.x * (self.threadIdx.y +
-                                                           blockDim.y *
-                                                           self.threadIdx.z))
+        self.thread_id = self.threadIdx.x + blockDim.x * (self.threadIdx.y + blockDim.y * self.threadIdx.z)
 
     def run(self):
         try:
@@ -181,9 +176,7 @@ class BlockThread(threading.Thread):
             else:
                 msg = '%s %s: %s' % (tid, ctaid, e)
             tb = sys.exc_info()[2]
-            # Using `with_traceback` here would cause it to be mutated by
-            # future raise statements, which may or may not matter.
-            self.exception = (type(e)(msg), tb)
+            self.exception = (type(e), type(e)(msg), tb)
 
     def syncthreads(self):
 
@@ -198,24 +191,21 @@ class BlockThread(threading.Thread):
             raise RuntimeError("abort flag set on syncthreads clear")
 
     def syncthreads_count(self, value):
-        idx = self.threadIdx.x, self.threadIdx.y, self.threadIdx.z
-        self._manager.block_state[idx] = value
+        self._manager.block_state[self.threadIdx.x, self.threadIdx.y, self.threadIdx.z] = value
         self.syncthreads()
         count = np.count_nonzero(self._manager.block_state)
         self.syncthreads()
         return count
 
     def syncthreads_and(self, value):
-        idx = self.threadIdx.x, self.threadIdx.y, self.threadIdx.z
-        self._manager.block_state[idx] = value
+        self._manager.block_state[self.threadIdx.x, self.threadIdx.y, self.threadIdx.z] = value
         self.syncthreads()
         test = np.all(self._manager.block_state)
         self.syncthreads()
         return 1 if test else 0
 
     def syncthreads_or(self, value):
-        idx = self.threadIdx.x, self.threadIdx.y, self.threadIdx.z
-        self._manager.block_state[idx] = value
+        self._manager.block_state[self.threadIdx.x, self.threadIdx.y, self.threadIdx.z] = value
         self.syncthreads()
         test = np.any(self._manager.block_state)
         self.syncthreads()
@@ -247,7 +237,7 @@ class BlockManager(object):
         self._grid_dim = grid_dim
         self._block_dim = block_dim
         self._f = f
-        self.block_state = np.zeros(block_dim, dtype=np.bool_)
+        self.block_state = np.zeros(block_dim, dtype=np.bool)
 
     def run(self, grid_point, *args):
         # Create all threads
@@ -278,7 +268,7 @@ class BlockManager(object):
                         t_other.syncthreads_blocked = False
                         t_other.syncthreads_event.set()
 
-                    raise t.exception[0].with_traceback(t.exception[1])
+                    reraise(*(t.exception))
             if livethreads == blockedthreads:
                 for t in blockedthreads:
                     t.syncthreads_blocked = False
@@ -289,4 +279,4 @@ class BlockManager(object):
         # finishing, before we could check it
         for t in threads:
             if t.exception:
-                raise t.exception[0].with_traceback(t.exception[1])
+                reraise(*(t.exception))

@@ -18,7 +18,7 @@ class SourceLines(Mapping):
 
         try:
             lines, startno = inspect.getsourcelines(func)
-        except OSError:
+        except IOError:
             self.lines = ()
             self.startno = 0
         else:
@@ -272,7 +272,7 @@ class TypeAnnotation(object):
         return self.annotate()
 
 
-re_longest_white_prefix = re.compile(r'^\s*')
+re_longest_white_prefix = re.compile('^\s*')
 
 
 def _getindent(text):

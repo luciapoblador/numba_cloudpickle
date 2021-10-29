@@ -1,4 +1,4 @@
-from numba.cuda.testing import unittest, CUDATestCase
+from numba.cuda.testing import unittest, CUDATestCase, skip_on_cudasim
 from numba import cuda
 from numba.core import config
 
@@ -38,3 +38,4 @@ class TestUserExc(CUDATestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

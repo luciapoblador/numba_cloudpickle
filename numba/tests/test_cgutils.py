@@ -31,7 +31,8 @@ class StructureTestCase(TestCase):
                                     * (ctypes.c_size_t,) * nargs)
         module = self.context.create_module("")
 
-        function = cgutils.get_or_insert_function(module, llvm_fnty, self.id())
+        function = module.get_or_insert_function(llvm_fnty,
+                                                name=self.id())
         assert function.is_declaration
         entry_block = function.append_basic_block('entry')
         builder = lc.Builder(entry_block)

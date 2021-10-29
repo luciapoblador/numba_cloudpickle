@@ -2,10 +2,11 @@ import numpy as np
 import ctypes
 from numba.cuda.cudadrv.devicearray import (DeviceRecord, from_record_like,
                                             auto_device)
+from numba import cuda
 from numba.cuda.testing import unittest, CUDATestCase
 from numba.cuda.testing import skip_on_cudasim
+import numpy as np
 from numba.np import numpy_support
-
 
 @skip_on_cudasim('Device Record API unsupported in the simulator')
 class TestCudaDeviceRecord(CUDATestCase):
@@ -13,7 +14,6 @@ class TestCudaDeviceRecord(CUDATestCase):
     Tests the DeviceRecord class with np.void host types.
     """
     def setUp(self):
-        super().setUp()
         self._create_data(np.zeros)
 
     def _create_data(self, array_ctor):
@@ -86,7 +86,6 @@ class TestCudaDeviceRecordWithRecord(TestCudaDeviceRecord):
     Tests the DeviceRecord class with np.record host types
     """
     def setUp(self):
-        CUDATestCase.setUp(self)
         self._create_data(np.recarray)
 
 

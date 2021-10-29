@@ -36,11 +36,10 @@ class TestIrUtils(TestCase):
 
         test_ir = compiler.run_frontend(test_func)
         typingctx = cpu_target.typing_context
-        targetctx = cpu_target.target_context
-        typing_res = type_inference_stage(
-            typingctx, targetctx, test_ir, (), None)
+        typemap, _, _ = type_inference_stage(
+            typingctx, test_ir, (), None)
         matched_call = ir_utils.find_callname(
-            test_ir, test_ir.blocks[0].body[7].value, typing_res.typemap)
+            test_ir, test_ir.blocks[0].body[8].value, typemap)
         self.assertTrue(isinstance(matched_call, tuple) and
                         len(matched_call) == 2 and
                         matched_call[0] == 'append')
@@ -90,7 +89,7 @@ class TestIrUtils(TestCase):
             # an assign of above into to variable `dead`
             # a const int above 0xdeaddead
             # an assign of said int to variable `deaddead`
-            # this is 2 statements to remove
+            # this is 4 things to remove
 
             self.assertEqual(len(the_ir.blocks), 1)
             block = the_ir.blocks[0]
@@ -100,14 +99,18 @@ class TestIrUtils(TestCase):
                     if 'dead' in getattr(x.target, 'name', ''):
                         deads.append(x)
 
+            expect_removed = []
             self.assertEqual(len(deads), 2)
+            expect_removed.extend(deads)
             for d in deads:
                 # check the ir.Const is the definition and the value is expected
                 const_val = the_ir.get_definition(d.value)
                 self.assertTrue(int('0x%s' % d.target.name, 16),
                                 const_val.value)
+                expect_removed.append(const_val)
 
-            return deads
+            self.assertEqual(len(expect_removed), 4)
+            return expect_removed
 
         def check_dce_ir(the_ir):
             self.assertEqual(len(the_ir.blocks), 1)

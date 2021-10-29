@@ -11,14 +11,14 @@ from numba.misc.special import literal_unroll
 from numba.core.analysis import (dead_branch_prune, rewrite_semantic_constants,
                                  find_literally_calls, compute_cfg_from_blocks,
                                  compute_use_defs)
+from numba.core.inline_closurecall import (InlineClosureCallPass,
+                                           inline_closure_call)
 from numba.core.ir_utils import (guard, resolve_func_from_module, simplify_CFG,
                                  GuardException, convert_code_obj_to_function,
                                  mk_unique_var, build_definitions,
                                  replace_var_names, get_name_var_table,
                                  compile_to_numba_ir, get_definition,
-                                 find_max_label, rename_labels,
-                                 transfer_scope, fixup_var_define_in_scope,
-                                 )
+                                 find_max_label, rename_labels)
 from numba.core.ssa import reconstruct_ssa
 from numba.core import interpreter
 
@@ -197,7 +197,6 @@ class InlineClosureLikes(FunctionPass):
         # no ability to resolve certain typed function calls in the array
         # inlining code, use this variable to indicate
         typed_pass = not isinstance(state.return_type, types.misc.PyObject)
-        from numba.core.inline_closurecall import InlineClosureCallPass
         inline_pass = InlineClosureCallPass(
             state.func_ir,
             state.flags.auto_parallel,
@@ -208,8 +207,6 @@ class InlineClosureLikes(FunctionPass):
         # Remove all Dels, and re-run postproc
         post_proc = postproc.PostProcessor(state.func_ir)
         post_proc.run()
-
-        fixup_var_define_in_scope(state.func_ir.blocks)
 
         if config.DEBUG or config.DUMP_IR:
             name = state.func_ir.func_id.func_qualname
@@ -595,6 +592,7 @@ class MakeFunctionToJitFunction(FunctionPass):
                                 ok = all([isinstance(getdef(x), ir.Const)
                                           for x in kw_default.items])
                             if not ok:
+                                print("NOT OK")
                                 continue
 
                             pyfunc = convert_code_obj_to_function(node, func_ir)
@@ -619,7 +617,7 @@ class TransformLiteralUnrollConstListToTuple(FunctionPass):
     """
     _name = "transform_literal_unroll_const_list_to_tuple"
 
-    _accepted_types = (types.BaseTuple, types.LiteralList)
+    _accepted_types = (types.BaseTuple,)
 
     def __init__(self):
         FunctionPass.__init__(self)
@@ -742,7 +740,7 @@ class MixedContainerUnroller(FunctionPass):
 
     _DEBUG = False
 
-    _accepted_types = (types.BaseTuple, types.LiteralList)
+    _accepted_types = (types.BaseTuple,)
 
     def __init__(self):
         FunctionPass.__init__(self)
@@ -1213,16 +1211,15 @@ class MixedContainerUnroller(FunctionPass):
 
         # 6. Patch in the unrolled body and fix up
         blks = state.func_ir.blocks
-        the_scope = next(iter(blks.values())).scope
         orig_lbl = tuple(this_loop_body)
 
         replace, *delete = orig_lbl
         unroll, header_block = unrolled_body, this_loop.header
         unroll_lbl = [x for x in sorted(unroll.blocks.keys())]
-        blks[replace] = transfer_scope(unroll.blocks[unroll_lbl[0]], the_scope)
+        blks[replace] = unroll.blocks[unroll_lbl[0]]
         [blks.pop(d) for d in delete]
         for k in unroll_lbl[1:]:
-            blks[k] = transfer_scope(unroll.blocks[k], the_scope)
+            blks[k] = unroll.blocks[k]
         # stitch up the loop predicate true -> new loop body jump
         blks[header_block].body[-1].truebr = replace
 
@@ -1267,7 +1264,7 @@ class IterLoopCanonicalization(FunctionPass):
     _DEBUG = False
 
     # if partial typing info is available it will only look at these types
-    _accepted_types = (types.BaseTuple, types.LiteralList)
+    _accepted_types = (types.BaseTuple,)
     _accepted_calls = (literal_unroll,)
 
     def __init__(self):
@@ -1359,7 +1356,6 @@ class IterLoopCanonicalization(FunctionPass):
         entry_block.body[idx + 1].value.value = call_get_range_var
 
         glbls = copy(func_ir.func_id.func.__globals__)
-        from numba.core.inline_closurecall import inline_closure_call
         inline_closure_call(func_ir, glbls, entry_block, idx, get_range,)
         kill = entry_block.body.index(assgn)
         entry_block.body.pop(kill)
@@ -1468,9 +1464,6 @@ class LiteralUnroll(FunctionPass):
         pm.add_pass(RewriteSemanticConstants, "rewrite semantic constants")
         # do the unroll
         pm.add_pass(MixedContainerUnroller, "performs mixed container unroll")
-        # rewrite dynamic getitem to static getitem as it's possible some more
-        # getitems will now be statically resolvable
-        pm.add_pass(GenericRewrites, "Generic Rewrites")
         pm.finalize()
         pm.run(state)
         return True

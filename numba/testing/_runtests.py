@@ -106,7 +106,7 @@ class _FailedFirstRunner(object):
 
         try:
             fobj = open(self.cache_filename)
-        except OSError:
+        except IOError:
             failed_tests = []
         else:
             with fobj as fin:

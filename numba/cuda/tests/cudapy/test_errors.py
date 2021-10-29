@@ -1,3 +1,5 @@
+import numpy as np
+
 from numba import cuda
 from numba.core.errors import TypingError
 from numba.cuda.testing import unittest, CUDATestCase, skip_on_cudasim
@@ -17,14 +19,12 @@ class TestJitErrors(CUDATestCase):
 
         with self.assertRaises(ValueError) as raises:
             kernfunc[(1, 2, 3, 4), (5, 6)]
-        self.assertIn("griddim must be a sequence of 1, 2 or 3 integers, "
-                      "got [1, 2, 3, 4]",
+        self.assertIn("griddim must be a sequence of 1, 2 or 3 integers, got [1, 2, 3, 4]",
                       str(raises.exception))
 
         with self.assertRaises(ValueError) as raises:
             kernfunc[(1, 2,), (3, 4, 5, 6)]
-        self.assertIn("blockdim must be a sequence of 1, 2 or 3 integers, "
-                      "got [3, 4, 5, 6]",
+        self.assertIn("blockdim must be a sequence of 1, 2 or 3 integers, got [3, 4, 5, 6]",
                       str(raises.exception))
 
     def test_non_integral_dims(self):
@@ -61,8 +61,7 @@ class TestJitErrors(CUDATestCase):
 
         @cuda.jit(device=True)
         def dev_func(x):
-            # floor is deliberately not imported for the purpose of this test.
-            return floor(x)  # noqa: F821
+            return floor(x) # oops, forgot to import `floor`.
 
         @cuda.jit
         def kernel_func():

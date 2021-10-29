@@ -23,7 +23,6 @@ class TestConfig(TestCase):
     def setUp(self):
         # use support.temp_directory, it can do the clean up
         self.tmppath = temp_directory('config_tmp')
-        self.maxDiff = 2500
         super(TestConfig, self).setUp()
 
     def mock_cfg_location(self):

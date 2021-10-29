@@ -7,7 +7,7 @@ from numba.tests.support import captured_stdout
 class DocsLiterallyUsageTest(unittest.TestCase):
 
     def test_literally_usage(self):
-        with captured_stdout() as stdout:
+        with captured_stdout():
             # magictoken.ex_literally_usage.begin
             import numba
 
@@ -26,16 +26,13 @@ class DocsLiterallyUsageTest(unittest.TestCase):
                         # special case: cubic
                         print("cubic")
                         return lambda x, n: x * x * x
-                else:
-                    # If `n` is not literal, request literal dispatch
-                    return lambda x, n: numba.literally(n)
 
                 print("generic")
                 return lambda x, n: x ** n
 
             @numba.njit
             def test_power(x, n):
-                return power(x, n)
+                return power(x, numba.literally(n))
 
             # should print "square" and "9"
             print(test_power(3, 2))
@@ -50,9 +47,6 @@ class DocsLiterallyUsageTest(unittest.TestCase):
             assert test_power(3, 2) == 3 ** 2
             assert test_power(3, 3) == 3 ** 3
             assert test_power(3, 4) == 3 ** 4
-
-        self.assertEqual('square\n9\ncubic\n27\ngeneric\n81\n',
-                         stdout.getvalue())
 
 
 if __name__ == '__main__':

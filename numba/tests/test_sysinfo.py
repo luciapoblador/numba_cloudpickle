@@ -36,6 +36,7 @@ class TestSysInfo(TestCase):
             ),
             bool: (
                 nsi._cu_dev_init,
+                nsi._roc_available,
                 nsi._svml_state,
                 nsi._svml_loaded,
                 nsi._svml_operational,
@@ -45,6 +46,7 @@ class TestSysInfo(TestCase):
                 nsi._wkq_thread,
             ),
             list: (
+                nsi._roc_toolchains,
                 nsi._errors,
                 nsi._warnings,
             ),

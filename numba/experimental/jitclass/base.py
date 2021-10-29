@@ -1,19 +1,18 @@
-import inspect
-import operator
-import types as pytypes
-import typing as pt
 from collections import OrderedDict
 from collections.abc import Sequence
+import types as pytypes
+import inspect
+import operator
 
 from llvmlite import ir as llvmir
-from numba import njit
-from numba.core import cgutils, errors, imputils, types, utils
-from numba.core.datamodel import default_manager, models
+
+from numba.core import types, utils, errors, cgutils, imputils
 from numba.core.registry import cpu_target
+from numba import njit
 from numba.core.typing import templates
-from numba.core.typing.asnumbatype import as_numba_type
-from numba.core.serialize import disable_pickling
+from numba.core.datamodel import default_manager, models
 from numba.experimental.jitclass import _box
+
 
 ##############################################################################
 # Data model
@@ -78,7 +77,6 @@ def _getargs(fn_sig):
     return args
 
 
-@disable_pickling
 class JitClassType(type):
     """
     The type of any jitclass.
@@ -169,16 +167,8 @@ def register_class_type(cls, spec, class_ctor, builder):
     builder: the internal jitclass builder
     """
     # Normalize spec
-    if spec is None:
-        spec = OrderedDict()
-    elif isinstance(spec, Sequence):
+    if isinstance(spec, Sequence):
         spec = OrderedDict(spec)
-
-    # Extend spec with class annotations.
-    for attr, py_type in pt.get_type_hints(cls).items():
-        if attr not in spec:
-            spec[attr] = as_numba_type(py_type)
-
     _validate_spec(spec)
 
     # Fix up private attribute names
@@ -250,7 +240,6 @@ def register_class_type(cls, spec, class_ctor, builder):
     # Register class
     targetctx = cpu_target.target_context
     builder(class_type, typingctx, targetctx).register()
-    as_numba_type.register(cls, class_type.instance_type)
 
     return cls
 
@@ -302,7 +291,7 @@ class ClassBuilder(object):
     A jitclass builder for a mutable jitclass.  This will register
     typing and implementation hooks to the given typing and target contexts.
     """
-    class_impl_registry = imputils.Registry('jitclass builder')
+    class_impl_registry = imputils.Registry()
     implemented_methods = set()
 
     def __init__(self, class_type, typingctx, targetctx):
@@ -523,7 +512,8 @@ def imp_dtor(context, module, instance_type):
                                      [llvoidptr, llsize, llvoidptr])
 
     fname = "_Dtor.{0}".format(instance_type.name)
-    dtor_fn = cgutils.get_or_insert_function(module, dtor_ftype, fname)
+    dtor_fn = module.get_or_insert_function(dtor_ftype,
+                                            name=fname)
     if dtor_fn.is_declaration:
         # Define
         builder = llvmir.IRBuilder(dtor_fn.append_basic_block())

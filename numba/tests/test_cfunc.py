@@ -124,7 +124,7 @@ class TestCFunc(TestCase):
         self.assertIn("add_usecase", symbol)
 
         addr = f.address
-        self.assertIsInstance(addr, int)
+        self.assertIsInstance(addr, utils.INT_TYPES)
 
         ct = f.ctypes
         self.assertEqual(ctypes.cast(ct, ctypes.c_void_p).value, addr)

@@ -198,15 +198,8 @@ class _SetPayload(object):
 
         mask = self.mask
         dtype = self._ty.dtype
-        tyctx = context.typing_context
-        fnty = tyctx.resolve_value_type(operator.eq)
-        sig = fnty.get_call_type(tyctx, (dtype, dtype), {})
-        for arg in sig.args:
-            if context.data_model_manager[arg].contains_nrt_meminfo():
-                msg = ("Use of reference counted items in 'set()' is "
-                       "unsupported, offending type is: '{}'.")
-                raise ValueError(msg.format(arg))
-        eqfn = context.get_function(fnty, sig)
+        eqfn = context.get_function(operator.eq,
+                                    typing.signature(types.boolean, dtype, dtype))
 
         one = ir.Constant(intp_t, 1)
         five = ir.Constant(intp_t, 5)
@@ -1158,17 +1151,15 @@ def build_set(context, builder, set_type, items):
     nitems = len(items)
     inst = SetInstance.allocate(context, builder, set_type, nitems)
 
-    if nitems > 0:
+    # Populate set.  Inlining the insertion code for each item would be very
+    # costly, instead we create a LLVM array and iterate over it.
+    array = cgutils.pack_array(builder, items)
+    array_ptr = cgutils.alloca_once_value(builder, array)
 
-        # Populate set.  Inlining the insertion code for each item would be very
-        # costly, instead we create a LLVM array and iterate over it.
-        array = cgutils.pack_array(builder, items)
-        array_ptr = cgutils.alloca_once_value(builder, array)
-
-        count = context.get_constant(types.intp, nitems)
-        with cgutils.for_range(builder, count) as loop:
-            item = builder.load(cgutils.gep(builder, array_ptr, 0, loop.index))
-            inst.add(item)
+    count = context.get_constant(types.intp, nitems)
+    with cgutils.for_range(builder, count) as loop:
+        item = builder.load(cgutils.gep(builder, array_ptr, 0, loop.index))
+        inst.add(item)
 
     return impl_ret_new_ref(context, builder, set_type, inst.value)
 
@@ -1318,10 +1309,7 @@ def set_update(context, builder, sig, args):
         inst.upsize(new_size)
 
     with for_iter(context, builder, items_type, items) as loop:
-        # make sure that the items being added are of the same dtype as the
-        # set instance
-        casted = context.cast(builder, loop.value, items_type.dtype, inst.dtype)
-        inst.add(casted)
+        inst.add(loop.value)
 
     if n is not None:
         # If we pre-grew the set, downsize in case there were many collisions

@@ -3,10 +3,9 @@ Calling conventions for Numba-compiled functions.
 """
 
 from collections import namedtuple
-from collections.abc import Iterable
 import itertools
 
-from llvmlite import ir
+from llvmlite import ir as ir
 
 from numba.core import types, cgutils
 from numba.core.base import PYOBJECT, GENERIC_POINTER
@@ -90,7 +89,7 @@ class BaseCallConv(object):
         self._return_errcode_raw(builder, RETCODE_NONE)
 
     def return_exc(self, builder):
-        self._return_errcode_raw(builder, RETCODE_EXC, mark_exc=True)
+        self._return_errcode_raw(builder, RETCODE_EXC)
 
     def return_stop_iteration(self, builder):
         self._return_errcode_raw(builder, RETCODE_STOPIT)
@@ -207,12 +206,12 @@ class MinimalCallConv(BaseCallConv):
 
         call_helper = self._get_call_helper(builder)
         exc_id = call_helper._add_exception(exc, exc_args, locinfo)
-        self._return_errcode_raw(builder, _const_int(exc_id), mark_exc=True)
+        self._return_errcode_raw(builder, _const_int(exc_id))
 
     def return_status_propagate(self, builder, status):
         self._return_errcode_raw(builder, status.code)
 
-    def _return_errcode_raw(self, builder, code, mark_exc=False):
+    def _return_errcode_raw(self, builder, code):
         if isinstance(code, int):
             code = _const_int(code)
         builder.ret(code)
@@ -394,7 +393,7 @@ class CPUCallConv(BaseCallConv):
             builder.branch(try_info['target'])
         else:
             # Return from the current function
-            self._return_errcode_raw(builder, RETCODE_USEREXC, mark_exc=True)
+            self._return_errcode_raw(builder, RETCODE_USEREXC)
 
     def _get_try_state(self, builder):
         try:
@@ -442,14 +441,10 @@ class CPUCallConv(BaseCallConv):
         excptr = self._get_excinfo_argument(builder.function)
         builder.store(status.excinfoptr, excptr)
         with builder.if_then(builder.not_(trystatus.in_try)):
-            self._return_errcode_raw(builder, status.code, mark_exc=True)
+            self._return_errcode_raw(builder, status.code)
 
-    def _return_errcode_raw(self, builder, code, mark_exc=False):
-        ret = builder.ret(code)
-
-        if mark_exc:
-            md = builder.module.add_metadata([ir.IntType(1)(1)])
-            ret.set_metadata("ret_is_raise", md)
+    def _return_errcode_raw(self, builder, code):
+        builder.ret(code)
 
     def _get_return_status(self, builder, code, excinfoptr):
         """
@@ -544,16 +539,9 @@ class CPUCallConv(BaseCallConv):
     def _get_excinfo_argument(self, func):
         return func.args[1]
 
-    def call_function(self, builder, callee, resty, argtys, args,
-                      attrs=None):
+    def call_function(self, builder, callee, resty, argtys, args):
         """
         Call the Numba-compiled *callee*.
-        Parameters:
-        -----------
-        attrs: LLVM style string or iterable of individual attributes, default
-               is None which specifies no attributes. Examples:
-               LLVM style string: "noinline fast"
-               Equivalent iterable: ("noinline", "fast")
         """
         # XXX better fix for callees that are not function values
         #     (pointers to function; thus have no `.args` attribute)
@@ -569,16 +557,7 @@ class CPUCallConv(BaseCallConv):
         arginfo = self._get_arg_packer(argtys)
         args = list(arginfo.as_arguments(builder, args))
         realargs = [retvaltmp, excinfoptr] + args
-        # deal with attrs, it's fine to specify a load in a string like
-        # "noinline fast" as per LLVM or equally as an iterable of individual
-        # attributes.
-        if attrs is None:
-            _attrs = ()
-        elif isinstance(attrs, Iterable) and not isinstance(attrs, str):
-            _attrs = tuple(attrs)
-        else:
-            raise TypeError("attrs must be an iterable of strings or None")
-        code = builder.call(callee, realargs, attrs=_attrs)
+        code = builder.call(callee, realargs)
         status = self._get_return_status(builder, code,
                                          builder.load(excinfoptr))
         retval = builder.load(retvaltmp)

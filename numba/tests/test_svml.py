@@ -5,8 +5,6 @@ import numbers
 import importlib
 import sys
 import re
-import traceback
-import multiprocessing as mp
 from itertools import chain, combinations
 
 import numba
@@ -21,9 +19,6 @@ needs_svml = unittest.skipUnless(config.USING_SVML,
 
 # a map of float64 vector lenghs with corresponding CPU architecture
 vlen2cpu = {2: 'nehalem', 4: 'haswell', 8: 'skylake-avx512'}
-# force LLVM to use AVX512 registers for vectorization
-# https://reviews.llvm.org/D67259
-vlen2cpu_features = {2: '', 4: '', 8: '-prefer-256-bit'}
 
 # K: SVML functions, V: python functions which are expected to be SIMD-vectorized
 # using SVML, explicit references to Python functions here are mostly for sake of
@@ -90,7 +85,7 @@ other_funcs = [f for f, v in svml_funcs.items() if "<built-in" in \
                   [str(p).split(' ')[0] for p in v]]
 
 
-def func_patterns(func, args, res, dtype, mode, vlen, fastmath, pad=' '*8):
+def func_patterns(func, args, res, dtype, mode, vlen, flags, pad=' '*8):
     """
     For a given function and its usage modes,
     returns python code and assembly patterns it should and should not generate
@@ -118,7 +113,7 @@ def func_patterns(func, args, res, dtype, mode, vlen, fastmath, pad=' '*8):
     f = func+'f' if is_f32 else func
     v = vlen*2 if is_f32 else vlen
     # general expectations
-    prec_suff = '' if fastmath else '_ha'
+    prec_suff = '' if getattr(flags, 'fastmath', False) else '_ha'
     scalar_func = '$_'+f if config.IS_OSX else '$'+f
     svml_func = '__svml_%s%d%s,' % (f, v, prec_suff)
     if mode == "scalar":
@@ -142,16 +137,16 @@ def func_patterns(func, args, res, dtype, mode, vlen, fastmath, pad=' '*8):
     return body, contains, avoids
 
 
-def usecase_name(dtype, mode, vlen, name):
+def usecase_name(dtype, mode, vlen, flags):
     """ Returns pretty name for given set of modes """
 
-    return f"{dtype}_{mode}{vlen}_{name}"
+    return "{dtype}_{mode}{vlen}_{flags.__name__}".format(**locals())
 
 
-def combo_svml_usecase(dtype, mode, vlen, fastmath, name):
+def combo_svml_usecase(dtype, mode, vlen, flags):
     """ Combine multiple function calls under single umbrella usecase """
 
-    name = usecase_name(dtype, mode, vlen, name)
+    name = usecase_name(dtype, mode, vlen, flags)
     body = """def {name}(n):
         x   = np.empty(n*8, dtype=np.{dtype})
         ret = np.empty_like(x)\n""".format(**locals())
@@ -162,7 +157,7 @@ def combo_svml_usecase(dtype, mode, vlen, fastmath, name):
     avoids = set()
     # fill body and expectation patterns
     for f in funcs:
-        b, c, a = func_patterns(f, ['x'], 'ret', dtype, mode, vlen, fastmath)
+        b, c, a = func_patterns(f, ['x'], 'ret', dtype, mode, vlen, flags)
         avoids.update(a)
         body += b
         contains.update(c)
@@ -184,84 +179,61 @@ class TestSVMLGeneration(TestCase):
     asm_filter = re.compile('|'.join(['\$[a-z_]\w+,']+list(svml_funcs)))
 
     @classmethod
-    def mp_runner(cls, testname, outqueue):
-        method = getattr(cls, testname)
-        try:
-            ok, msg = method()
-        except Exception:
-            msg = traceback.format_exc()
-            ok = False
-        outqueue.put({'status': ok, 'msg': msg})
-
-    @classmethod
     def _inject_test(cls, dtype, mode, vlen, flags):
         # unsupported combinations
         if dtype.startswith('complex') and mode != 'numpy':
-            return
+            return 
         # TODO: address skipped tests below
         skipped = dtype.startswith('int') and vlen == 2
-        sig = (numba.int64,)
+        args = (dtype, mode, vlen, flags)
         # unit test body template
-        @staticmethod
-        def run_template():
-            fn, contains, avoids = combo_svml_usecase(dtype, mode, vlen,
-                                                      flags['fastmath'],
-                                                      flags['name'])
+        @unittest.skipUnless(not skipped, "Not implemented")
+        def test_template(self):
+            fn, contains, avoids = combo_svml_usecase(*args)
             # look for specific patters in the asm for a given target
             with override_env_config('NUMBA_CPU_NAME', vlen2cpu[vlen]), \
-                 override_env_config('NUMBA_CPU_FEATURES', vlen2cpu_features[vlen]):
+                 override_env_config('NUMBA_CPU_FEATURES', ''):
                 # recompile for overridden CPU
                 try:
-                    jitted_fn = njit(sig, fastmath=flags['fastmath'],
-                                     error_model=flags['error_model'],)(fn)
+                    jit = compile_isolated(fn, (numba.int64, ), flags=flags)
                 except:
                     raise Exception("raised while compiling "+fn.__doc__)
-            asm = jitted_fn.inspect_asm(sig)
+            asm = jit.library.get_asm_str()
             missed = [pattern for pattern in contains if not pattern in asm]
             found = [pattern for pattern in avoids if pattern in asm]
-            ok = not missed and not found
-            detail = '\n'.join(
-                [line for line in asm.split('\n')
-                 if cls.asm_filter.search(line) and not '"' in line])
-            msg = (
-                f"While expecting {missed} and not {found},\n"
-                f"it contains:\n{detail}\n"
-                f"when compiling {fn.__doc__}"
-            )
-            return ok, msg
+            self.assertTrue(not missed and not found,
+                "While expecting %s and no %s,\n"
+                "it contains:\n%s\n"
+                "when compiling %s" % (str(missed), str(found), '\n'.join(
+                    [line for line in asm.split('\n')
+                     if cls.asm_filter.search(line) and not '"' in line]),
+                     fn.__doc__))
         # inject it into the class
-        postfix = usecase_name(dtype, mode, vlen, flags['name'])
-        testname = f"run_{postfix}"
-        setattr(cls, testname, run_template)
-
-        @unittest.skipUnless(not skipped, "Not implemented")
-        def test_runner(self):
-            ctx = mp.get_context("spawn")
-            q = ctx.Queue()
-            p = ctx.Process(target=type(self).mp_runner, args=[testname, q])
-            p.start()
-            # timeout to avoid hanging and long enough to avoid bailing too early
-            p.join(timeout=10)
-            self.assertEqual(p.exitcode, 0, msg="process ended unexpectedly")
-            out = q.get()
-            status = out['status']
-            msg = out['msg']
-            self.assertTrue(status, msg=msg)
-
-        setattr(cls, f"test_{postfix}", test_runner)
+        setattr(cls, "test_"+usecase_name(*args), test_template)
 
     @classmethod
     def autogenerate(cls):
-        flag_list = [{'fastmath':False, 'error_model':'numpy',
-                     'name':'usecase'},
-                     {'fastmath':True, 'error_model':'numpy',
-                     'name':'fastmath_usecase'},]
+        test_flags = ['fastmath', ]  # TODO: add 'auto_parallel' ?
+        # generate all the combinations of the flags
+        test_flags = sum([list(combinations(test_flags, x)) for x in range( \
+                                                    len(test_flags)+1)], [])
+        flag_list = []  # create Flag class instances
+        for ft in test_flags:
+            flags = Flags()
+            flags.set('nrt')
+            flags.set('error_model', 'numpy')
+            flags.__name__ = '_'.join(ft+('usecase',))
+            for f in ft:
+                flags.set(f, {
+                    'fastmath': cpu.FastMathOptions(True)
+                }.get(f, True))
+            flag_list.append(flags)
         # main loop covering all the modes and use-cases
         for dtype in ('complex64', 'float64', 'float32', 'int32', ):
             for vlen in vlen2cpu:
                 for flags in flag_list:
                     for mode in "scalar", "range", "prange", "numpy":
-                        cls._inject_test(dtype, mode, vlen, dict(flags))
+                        cls._inject_test(dtype, mode, vlen, flags)
         # mark important
         for n in ( "test_int32_range4_usecase",  # issue #3016
                     ):
@@ -291,12 +263,12 @@ class TestSVML(TestCase):
 
     def __init__(self, *args):
         self.flags = Flags()
-        self.flags.nrt = True
+        self.flags.set('nrt')
 
         # flags for njit(fastmath=True)
         self.fastflags = Flags()
-        self.fastflags.nrt = True
-        self.fastflags.fastmath = cpu.FastMathOptions(True)
+        self.fastflags.set('nrt')
+        self.fastflags.set('fastmath', cpu.FastMathOptions(True))
         super(TestSVML, self).__init__(*args)
 
     def compile(self, func, *args, **kwargs):
@@ -330,9 +302,6 @@ class TestSVML(TestCase):
         std_pattern = kwargs.pop('std_pattern', None)
         fast_pattern = kwargs.pop('fast_pattern', None)
         cpu_name = kwargs.pop('cpu_name', 'skylake-avx512')
-        # force LLVM to use AVX512 registers for vectorization
-        # https://reviews.llvm.org/D67259
-        cpu_features = kwargs.pop('cpu_features', '-prefer-256-bit')
 
         # python result
         py_expected = pyfunc(*self.copy_args(*args))
@@ -349,7 +318,7 @@ class TestSVML(TestCase):
 
         # look for specific patters in the asm for a given target
         with override_env_config('NUMBA_CPU_NAME', cpu_name), \
-             override_env_config('NUMBA_CPU_FEATURES', cpu_features):
+             override_env_config('NUMBA_CPU_FEATURES', ''):
             # recompile for overridden CPU
             jitstd, jitfast = self.compile(pyfunc, *args)
             if std_pattern:
@@ -405,9 +374,9 @@ class TestSVML(TestCase):
                          override_env_config('NUMBA_CPU_FEATURES', ''):
                         sig = (numba.int32,)
                         f = Flags()
-                        f.nrt = True
+                        f.set('nrt')
                         std = compile_isolated(math_sin_loop, sig, flags=f)
-                        f.fastmath = cpu.FastMathOptions(True)
+                        f.set('fastmath', cpu.FastMathOptions(True))
                         fast = compile_isolated(math_sin_loop, sig, flags=f)
                         fns = std, fast
 

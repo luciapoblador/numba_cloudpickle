@@ -10,6 +10,7 @@ from llvmlite import ir
 from numba.core import types, cgutils
 from numba.core.pythonapi import box, unbox, NativeValue
 from numba import njit
+from numba.experimental.jitclass import _box
 
 
 _getter_code_template = """
@@ -106,7 +107,6 @@ def _specialize_box(typ):
         dct[name] = _generate_method(name, func)
 
     # Create subclass
-    from numba.experimental.jitclass import _box
     subcls = type(typ.classname, (_box.Box,), dct)
     # Store to cache
     _cache_specialized_box[typ] = subcls
@@ -159,7 +159,6 @@ def _box_class_instance(typ, val, c):
         casted = c.builder.bitcast(ptr, llvoidptr.as_pointer())
         c.builder.store(value, casted)
 
-    from numba.experimental.jitclass import _box
     set_member(_box.box_meminfoptr_offset, addr_meminfo)
     set_member(_box.box_dataptr_offset, addr_data)
     return box
@@ -179,7 +178,6 @@ def _unbox_class_instance(typ, val, c):
     inst = struct_cls(c.context, c.builder)
 
     # load from Python object
-    from numba.experimental.jitclass import _box
     ptr_meminfo = access_member(_box.box_meminfoptr_offset)
     ptr_dataptr = access_member(_box.box_dataptr_offset)
 
