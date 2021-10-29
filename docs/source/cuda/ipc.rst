@@ -7,6 +7,9 @@ Sharing CUDA Memory
 Sharing between process
 =======================
 
+.. warning:: This feature is limited to Linux only.
+
+
 Export device array to another process
 --------------------------------------
 

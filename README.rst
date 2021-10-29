@@ -10,10 +10,6 @@ Numba
    :target: https://numba.discourse.group/
    :alt: Discourse
 
-.. image:: https://zenodo.org/badge/3659275.svg
-   :target: https://zenodo.org/badge/latestdoi/3659275
-   :alt: Zenodo DOI
-
 A Just-In-Time Compiler for Numerical Functions in Python
 #########################################################
 
@@ -27,34 +23,34 @@ parallelization of loops, generation of GPU-accelerated code, and creation of
 ufuncs and C callbacks.
 
 For more information about Numba, see the Numba homepage:
-https://numba.pydata.org
+http://numba.pydata.org
 
 Supported Platforms
 ===================
 
-* Operating systems and CPUs:
+* Operating systems and CPU:
 
   - Linux: x86 (32-bit), x86_64, ppc64le (POWER8 and 9), ARMv7 (32-bit),
-    ARMv8 (64-bit).
-  - Windows: x86, x86_64.
-  - macOS: x86_64, (M1/Arm64, unofficial support only).
-  - \*BSD: (unofficial support only).
+    ARMv8 (64-bit)
+  - Windows: x86, x86_64
+  - macOS: x86_64
 
 * (Optional) Accelerators and GPUs:
 
-  * NVIDIA GPUs (Kepler architecture or later) via CUDA driver on Linux,
-    Windows, macOS (< 10.14).
+  * NVIDIA GPUs (Kepler architecture or later) via CUDA driver on Linux, Windows,
+    macOS (< 10.14)
+  * AMD GPUs via ROCm driver on Linux
 
 Dependencies
 ============
 
-* Python versions: 3.7-3.9
-* llvmlite 0.38.*
-* NumPy >=1.17 (can build with 1.11 for ABI compatibility).
+* Python versions: 3.6-3.8
+* llvmlite 0.33.*
+* NumPy >=1.15 (can build with 1.11 for ABI compatibility)
 
 Optionally:
 
-* SciPy >=1.0.0 (for ``numpy.linalg`` support).
+* Scipy >=1.0.0 (for ``numpy.linalg`` support)
 
 
 Installing
@@ -67,22 +63,21 @@ Distribution: https://www.anaconda.com/download
 
    $ conda install numba
 
-For more options, see the Installation Guide:
-https://numba.readthedocs.io/en/stable/user/installing.html
+For more options, see the Installation Guide: http://numba.pydata.org/numba-doc/latest/user/installing.html
 
 Documentation
 =============
 
-https://numba.readthedocs.io/en/stable/index.html
+http://numba.pydata.org/numba-doc/latest/index.html
 
 
-Contact
-=======
+Mailing Lists
+=============
 
-Numba has a discourse forum for discussions:
+Join the Numba mailing list numba-users@continuum.io:
+https://groups.google.com/a/continuum.io/d/forum/numba-users
 
-* https://numba.discourse.group
-
+Some old archives are at: http://librelist.com/browser/numba/
 
 
 Continuous Integration

@@ -27,16 +27,6 @@ except ImportError:
     sys.path.insert(0, os.path.abspath('../..'))
     import numba
 
-
-on_rtd = os.environ.get('READTHEDOCS') == 'True'
-
-if on_rtd:
-    # The following is needed to fix RTD issue with numpydoc
-    # https://github.com/readthedocs/sphinx_rtd_theme/issues/766
-    from conda.cli.python_api import run_command as conda_cmd
-
-    conda_cmd("install", "-c", "conda-forge", "sphinx_rtd_theme>=0.5.1", "-y")
-
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
@@ -132,7 +122,7 @@ html_theme = 'sphinx_rtd_theme'
 # All sphinx_rtd_theme options. Default values commented out; uncomment to
 # change.
 html_theme_options = {
-    'canonical_url': 'https://numba.readthedocs.io/en/stable/',
+    'canonical_url': 'http://numba.pydata.org/numba-doc/latest/index.html',
     # 'logo_only': False,
     # 'display_version': True,
     # 'prev_next_buttons_location': 'bottom',
@@ -224,22 +214,22 @@ htmlhelp_basename = 'Numbadoc'
 # -- Options for LaTeX output ---------------------------------------------
 
 latex_elements = {
-    # The paper size ('letterpaper' or 'a4paper').
-    #'papersize': 'letterpaper',
+# The paper size ('letterpaper' or 'a4paper').
+#'papersize': 'letterpaper',
 
-    # The font size ('10pt', '11pt' or '12pt').
-    #'pointsize': '10pt',
+# The font size ('10pt', '11pt' or '12pt').
+#'pointsize': '10pt',
 
-    # Additional stuff for the LaTeX preamble.
-    #'preamble': '',
+# Additional stuff for the LaTeX preamble.
+#'preamble': '',
 }
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    ('index', 'numba.tex', u'Numba Documentation',
-     u'Anaconda', 'manual'),
+  ('index', 'numba.tex', u'Numba Documentation',
+   u'Anaconda', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -282,9 +272,9 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    ('index', 'Numba', 'Numba Documentation',
-     'Anaconda', 'Numba', 'One line description of project.',
-     'Miscellaneous'),
+  ('index', 'Numba', 'Numba Documentation',
+   'Anaconda', 'Numba', 'One line description of project.',
+   'Miscellaneous'),
 ]
 
 # Documents to append as an appendix to all manuals.
@@ -306,7 +296,7 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'numpy': ('http://docs.scipy.org/doc/numpy', None),
     'llvmlite': ('http://llvmlite.pydata.org/en/latest/', None),
-}
+    }
 
 
 # numpydoc options
@@ -315,7 +305,6 @@ intersphinx_mapping = {
 numpydoc_show_class_members = False
 
 # -- Custom autogeneration ------------------------------------------------
-
 
 def _autogenerate():
     from numba.scripts.generate_lower_listing import gen_lower_listing
@@ -338,6 +327,5 @@ def _autogenerate():
 
 _autogenerate()
 
-
 def setup(app):
-    app.add_css_file('rtd-overrides.css')
+    app.add_stylesheet('rtd-overrides.css')

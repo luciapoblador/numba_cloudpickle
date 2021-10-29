@@ -262,10 +262,8 @@ same character width as the original string, even if the slice could be
 represented with a narrower character width.  (These details are invisible to
 the user, of course.)
 
-The following constructors, functions, attributes and methods are currently
-supported:
+The following functions, attributes and methods are currently supported:
 
-* ``str(int)``
 * ``len()``
 * ``+`` (concatenation of strings)
 * ``*`` (repetition of strings)
@@ -311,11 +309,6 @@ supported:
 * ``.title()``
 * ``.upper()``
 * ``.zfill()``
-
-Regular string literals (e.g. ``"ABC"``) as well as f-strings without format specs
-(e.g. ``"ABC_{a+1}"``)
-that only use string and integer variables (types with ``str()`` overload)
-are supported in :term:`nopython mode`.
 
 Additional operations as well as support for Python 2 strings / Python 3 bytes
 will be added in a future version of Numba.  Python 2 Unicode objects will
@@ -392,7 +385,7 @@ than to act as a token to permit the use of this feature. Example use:
     from numba import njit, literal_unroll
 
     @njit
-    def foo():
+    def foo()
         heterogeneous_tuple = (1, 2j, 3.0, "a")
         for i in literal_unroll(heterogeneous_tuple):
             print(i)
@@ -400,6 +393,7 @@ than to act as a token to permit the use of this feature. Example use:
 .. warning::
     The following restrictions apply to the use of :func:`literal_unroll`:
 
+    * This feature is only available for Python versions >= 3.6.
     * :func:`literal_unroll` can only be used on tuples and constant lists of
       compile time constants, e.g. ``[1, 2j, 3, "a"]`` and the list not being
       mutated.
@@ -648,7 +642,7 @@ Important things to note about these kinds of lists:
    supported e.g. ``len()``.
 #. Dynamic access of items is not possible, e.g. ``some_list[x]``, for a
    value ``x`` which is not a compile time constant. This is because it's
-   impossible to statically determine the type of the item being accessed.
+   impossible statically determine the type of the item being accessed.
 #. Inside the compiler, these lists are actually just tuples with some extra
    things added to make them look like they are lists.
 #. They cannot be returned to the interpreter from a compiled function.
@@ -704,7 +698,6 @@ All methods and operations on sets are supported in JIT-compiled functions.
 Sets must be strictly homogeneous: Numba will reject any set containing
 objects of different types, even if the types are compatible (for example,
 ``{1, 2.5}`` is rejected as it contains a :class:`int` and a :class:`float`).
-The use of reference counted types, e.g. strings, in sets is unsupported.
 
 .. note::
    When passing a set into a JIT-compiled function, any modifications
@@ -799,23 +792,6 @@ threads will potentially corrupt memory, causing a
 range of possible failures. However, the dictionary can be safely read from
 multiple threads as long as the contents of the dictionary do not
 change during the parallel access.
-
-Dictionary comprehension
-''''''''''''''''''''''''
-
-Numba supports dictionary comprehension under the assumption that a
-``numba.typed.Dict`` instance can be created from the comprehension.  For
-example::
-
-  In [1]: from numba import njit
-
-  In [2]: @njit
-     ...: def foo(n):
-     ...:     return {i: i**2 for i in range(n)}
-     ...:
-
-  In [3]: foo(3)
-  Out[3]: DictType[int64,int64]<iv=None>({0: 0, 1: 1, 2: 4})
 
 .. _feature-dict-initial-value:
 
@@ -941,7 +917,6 @@ The following built-in functions are supported:
   a jitted function).
 * :func:`round`
 * :func:`sorted`: the ``key`` argument is not supported
-* :func:`sum`
 * :func:`type`: only the one-argument form, and only on some types
   (e.g. numbers and named tuples)
 * :func:`zip`
@@ -1157,39 +1132,9 @@ startup with entropy drawn from the operating system.
 * :func:`random.vonmisesvariate`
 * :func:`random.weibullvariate`
 
-.. warning::
+.. note::
    Calling :func:`random.seed` from non-Numba code (or from :term:`object mode`
    code) will seed the Python random generator, not the Numba random generator.
-   To seed the Numba random generator, see the example below.
-
-.. code-block:: python
-
-  from numba import njit
-  import random
-
-  @njit
-  def seed(a):
-      random.seed(a)
-
-  @njit
-  def rand():
-      return random.random()
-
-
-  # Incorrect seeding
-  random.seed(1234)
-  print(rand())
-
-  random.seed(1234)
-  print(rand())
-
-  # Correct seeding
-  seed(1234)
-  print(rand())
-
-  seed(1234)
-  print(rand())
-
 
 .. note::
    Since version 0.28.0, the generator is thread-safe and fork-safe.  Each

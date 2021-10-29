@@ -52,28 +52,6 @@ Pinned memory
    :noindex:
 .. autofunction:: numba.cuda.pinned_array
    :noindex:
-.. autofunction:: numba.cuda.pinned_array_like
-   :noindex:
-
-
-Mapped memory
-=============
-
-.. autofunction:: numba.cuda.mapped
-   :noindex:
-.. autofunction:: numba.cuda.mapped_array
-   :noindex:
-.. autofunction:: numba.cuda.mapped_array_like
-   :noindex:
-
-
-
-Managed memory
-==============
-
-.. autofunction:: numba.cuda.managed_array
-   :noindex:
-
 
 Streams
 =======
@@ -162,15 +140,11 @@ unlike traditional dynamic memory management.
 
    Allocate a local array of the given *shape* and *type* on the device.
    *shape* is either an integer or a tuple of integers representing the array's
-   dimensions and must be a simple constant expression. *type* is a :ref:`Numba
-   type <numba-types>` of the elements needing to be stored in the array. The
-   array is private to the current thread. An array-like object is returned
-   which can be read and written to like any standard array (e.g. through
-   indexing).
-
-   .. seealso:: The Local Memory section of `Device Memory Accesses
-      <https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#device-memory-accesses>`_
-      in the CUDA programming guide.
+   dimensions and must be a simple constant expression. *type* is a
+   :ref:`Numba type <numba-types>` of the elements needing to be stored in the
+   array. The array is private to the current thread. An array-like object is
+   returned which can be read and written to like any standard array
+   (e.g. through indexing).
 
 Constant memory
 ===============
